@@ -18,7 +18,7 @@
 <br>
 
 ```bash
-npx gsd-ide@latest
+npx github:vietdev99/GSDAntigravity@latest
 ```
 
 **Works on Mac, Windows, and Linux.**
@@ -76,7 +76,7 @@ People who want to describe what they want and have it built correctly — witho
 ## Getting Started
 
 ```bash
-npx gsd-ide@latest
+npx github:vietdev99/GSDAntigravity@latest
 ```
 
 The installer prompts you to choose:
@@ -96,7 +96,7 @@ Verify with:
 GSD evolves fast. Update periodically:
 
 ```bash
-npx gsd-ide@latest
+npx github:vietdev99/GSDAntigravity@latest
 ```
 
 <details>
@@ -104,29 +104,29 @@ npx gsd-ide@latest
 
 ```bash
 # Claude Code
-npx gsd-ide --claude --global   # Install to ~/.claude/
-npx gsd-ide --claude --local    # Install to ./.claude/
+npx github:vietdev99/GSDAntigravity --claude --global   # Install to ~/.claude/
+npx github:vietdev99/GSDAntigravity --claude --local    # Install to ./.claude/
 
 # OpenCode (open source, free models)
-npx gsd-ide --opencode --global # Install to ~/.config/opencode/
+npx github:vietdev99/GSDAntigravity --opencode --global # Install to ~/.config/opencode/
 
 # Gemini CLI
-npx gsd-ide --gemini --global   # Install to ~/.gemini/
+npx github:vietdev99/GSDAntigravity --gemini --global   # Install to ~/.gemini/
 
 # Codex (skills-first)
-npx gsd-ide --codex --global    # Install to ~/.codex/
-npx gsd-ide --codex --local     # Install to ./.codex/
+npx github:vietdev99/GSDAntigravity --codex --global    # Install to ~/.codex/
+npx github:vietdev99/GSDAntigravity --codex --local     # Install to ./.codex/
 
 # Antigravity IDE
-npx gsd-ide --antigravity --global  # Install to ~/.gemini/antigravity/
-npx gsd-ide --antigravity --local   # Install to ./.antigravity/
+npx github:vietdev99/GSDAntigravity --antigravity --global  # Install to ~/.gemini/antigravity/
+npx github:vietdev99/GSDAntigravity --antigravity --local   # Install to ./.antigravity/
 
 # Kiro IDE
-npx gsd-ide --kiro --global          # Install to ~/.kiro/
-npx gsd-ide --kiro --local           # Install to ./.kiro/
+npx github:vietdev99/GSDAntigravity --kiro --global          # Install to ~/.kiro/
+npx github:vietdev99/GSDAntigravity --kiro --local           # Install to ./.kiro/
 
 # All runtimes
-npx gsd-ide --all --global      # Install to all directories
+npx github:vietdev99/GSDAntigravity --all --global      # Install to all directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
@@ -204,7 +204,7 @@ If you prefer not to use that flag, add this to your project's `.claude/settings
 
 ```bash
 # Global install (recommended)
-npx gsd-ide --antigravity --global
+npx github:vietdev99/GSDAntigravity --antigravity --global
 
 # Or from local clone
 node bin/install.js --antigravity --global
@@ -261,7 +261,7 @@ Same commands as Claude Code / Gemini — use the `/gsd:` prefix:
 #### Uninstall
 
 ```bash
-npx gsd-ide --antigravity --global --uninstall
+npx github:vietdev99/GSDAntigravity --antigravity --global --uninstall
 ```
 
 </details>
@@ -713,18 +713,18 @@ This prevents Claude from reading these files entirely, regardless of what comma
 
 **Commands not working as expected?**
 - Run `/gsd:help` to verify installation
-- Re-run `npx gsd-ide` to reinstall
+- Re-run `npx github:vietdev99/GSDAntigravity` to reinstall
 
 **Updating to the latest version?**
 ```bash
-npx gsd-ide@latest
+npx github:vietdev99/GSDAntigravity@latest
 ```
 
 **Using Docker or containerized environments?**
 
 If file reads fail with tilde paths (`~/.claude/...`), set `CLAUDE_CONFIG_DIR` before installing:
 ```bash
-CLAUDE_CONFIG_DIR=/home/youruser/.claude npx gsd-ide --global
+CLAUDE_CONFIG_DIR=/home/youruser/.claude npx github:vietdev99/GSDAntigravity --global
 ```
 This ensures absolute paths are used instead of `~` which may not expand correctly in containers.
 
@@ -734,14 +734,14 @@ To remove GSD completely:
 
 ```bash
 # Global installs
-npx gsd-ide --claude --global --uninstall
-npx gsd-ide --opencode --global --uninstall
-npx gsd-ide --codex --global --uninstall
+npx github:vietdev99/GSDAntigravity --claude --global --uninstall
+npx github:vietdev99/GSDAntigravity --opencode --global --uninstall
+npx github:vietdev99/GSDAntigravity --codex --global --uninstall
 
 # Local installs (current project)
-npx gsd-ide --claude --local --uninstall
-npx gsd-ide --opencode --local --uninstall
-npx gsd-ide --codex --local --uninstall
+npx github:vietdev99/GSDAntigravity --claude --local --uninstall
+npx github:vietdev99/GSDAntigravity --opencode --local --uninstall
+npx github:vietdev99/GSDAntigravity --codex --local --uninstall
 ```
 
 This removes all GSD commands, agents, hooks, and settings while preserving your other configurations.
@@ -750,7 +750,7 @@ This removes all GSD commands, agents, hooks, and settings while preserving your
 
 ## Community Ports
 
-OpenCode, Gemini CLI, and Codex are now natively supported via `npx gsd-ide`.
+OpenCode, Gemini CLI, and Codex are now natively supported via `npx github:vietdev99/GSDAntigravity`.
 
 These community ports pioneered multi-runtime support:
 
