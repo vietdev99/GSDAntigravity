@@ -884,6 +884,96 @@ Translate \`AskUserQuestion\` calls to \`notify_user\`:
 }
 
 /**
+ * Get the compact Antigravity adapter for workflow files.
+ * Smaller than the full adapter — just key tool mappings needed at runtime.
+ */
+function getAntigravityWorkflowAdapter() {
+  return `<antigravity_tools>
+## Runtime Tool Mapping
+
+This workflow was written for Claude Code. In Antigravity IDE, use these equivalents:
+
+- Task(subagent_type="X", prompt="Y") → use run_command to spawn subagent via terminal
+- AskUserQuestion(header, question, options) → use notify_user with BlockedOnUser=true
+- Read → view_file | Write → write_to_file | Edit → replace_file_content
+- Bash → run_command | Glob → find_by_name | Grep → grep_search
+- Use command_status to wait for run_command completion
+</antigravity_tools>`;
+}
+
+/**
+ * Get the SYSTEM_INSTRUCTION.md content for Antigravity IDE.
+ * Tells the AI about GSD's command structure and tool mappings.
+ * @param {string} configDir - The GSD config directory path
+ */
+function getAntigravitySystemInstruction(configDir) {
+  const configDirDisplay = configDir.replace(/\\/g, '/').replace(require('os').homedir().replace(/\\/g, '/'), '~');
+  return `# GSD (Get Shit Done) — Antigravity IDE Integration
+
+You have GSD installed. GSD is a meta-prompting, context engineering and spec-driven development system.
+
+## Available Commands
+
+Run these as slash commands (e.g. \`/gsd:help\`):
+
+| Command | Purpose |
+|---------|---------|
+| /gsd:new-project | Initialize a new project |
+| /gsd:discuss-phase N | Discuss phase N before planning |
+| /gsd:plan-phase N | Create plans for phase N |
+| /gsd:execute-phase N | Execute phase N |
+| /gsd:verify-work N | Verify phase N results |
+| /gsd:progress | Show overall progress |
+| /gsd:quick "description" | Quick task without full planning |
+| /gsd:help | Show all available commands |
+
+Command files are at: \`${configDirDisplay}/commands/gsd/\`
+Agents are at: \`${configDirDisplay}/agents/\`
+Workflows are at: \`${configDirDisplay}/get-shit-done/workflows/\`
+
+## Tool Mapping
+
+GSD workflows reference Claude Code tools. In Antigravity, map them as follows:
+
+| Claude Code | Antigravity | Notes |
+|-------------|-------------|-------|
+| Read | view_file | Also view_file_outline for structure |
+| Write | write_to_file | Creates/overwrites files |
+| Edit | replace_file_content | Use multi_replace_file_content for non-contiguous edits |
+| Bash | run_command | Use command_status to monitor output |
+| Task() | run_command | Spawn subagents via terminal |
+| AskUserQuestion | notify_user | Set BlockedOnUser=true for questions |
+| Glob | find_by_name | File search with glob patterns |
+| Grep | grep_search | Ripgrep-based content search |
+| WebSearch | search_web | Web search |
+| WebFetch | read_url_content | Fetch URL content |
+
+## Task() Subagent Pattern
+
+GSD uses \`Task(subagent_type="X", prompt="Y")\` to spawn subagents.
+In Antigravity, spawn via terminal:
+
+1. Use \`run_command\` to execute the subagent
+2. Use \`command_status\` to wait for and collect results
+3. Parse results from command output
+
+## Project Structure
+
+When GSD initializes a project, it creates:
+\`\`\`
+.planning/
+├── PROJECT.md          # Project context
+├── REQUIREMENTS.md     # Detailed requirements
+├── ROADMAP.md          # Phase-based roadmap
+├── STATE.md            # Current state
+├── config.json         # Settings
+├── research/           # Domain research
+└── phases/             # Phase plans and summaries
+\`\`\`
+`;
+}
+
+/**
  * Convert Claude Code agent frontmatter to Antigravity IDE format
  * Based on Gemini agent converter but uses Antigravity tool names:
  * - tools: must be a YAML array
@@ -1287,9 +1377,15 @@ function copyWithPathReplacement(srcDir, destDir, pathPrefix, runtime, isCommand
           fs.writeFileSync(destPath, content);
         }
       } else if (runtime === 'antigravity') {
+        // Strip <sub> tags for all antigravity files
+        content = stripSubTags(content);
+
+        // Convert tool name references in body text for workflows
+        content = content.replace(/\bAskUserQuestion\b/g, 'notify_user');
+        content = content.replace(/\bTodoWrite\b/g, 'write_to_file');
+
         if (isCommand) {
-          // Antigravity: keep .md format, add adapter header, strip <sub> tags
-          content = stripSubTags(content);
+          // Commands: add full adapter header
           const adapter = getAntigravityAdapterHeader();
           const { frontmatter, body } = extractFrontmatterAndBody(content);
           if (frontmatter) {
@@ -1297,6 +1393,10 @@ function copyWithPathReplacement(srcDir, destDir, pathPrefix, runtime, isCommand
           } else {
             content = `${adapter}\n\n${content}`;
           }
+        } else if (srcPath.includes('workflows')) {
+          // Workflow files: add compact adapter at the top
+          const workflowAdapter = getAntigravityWorkflowAdapter();
+          content = `${workflowAdapter}\n\n${content}`;
         }
         fs.writeFileSync(destPath, content);
       } else if (isCodex) {
@@ -2102,6 +2202,14 @@ function install(isGlobal, runtime = 'claude') {
     failures.push('get-shit-done');
   }
 
+  // Create SYSTEM_INSTRUCTION.md for Antigravity IDE
+  if (isAntigravity) {
+    const sysInstructionPath = path.join(targetDir, 'SYSTEM_INSTRUCTION.md');
+    const sysInstructionContent = getAntigravitySystemInstruction(targetDir);
+    fs.writeFileSync(sysInstructionPath, sysInstructionContent);
+    console.log(`  ${green}✓${reset} Created SYSTEM_INSTRUCTION.md`);
+  }
+
   // Copy agents to agents directory
   const agentsSrc = path.join(src, 'agents');
   if (fs.existsSync(agentsSrc)) {
@@ -2539,6 +2647,8 @@ if (process.env.GSD_TEST_MODE) {
     getDirName,
     getGlobalDir,
     getConfigDirFromHome,
+    getAntigravityWorkflowAdapter,
+    getAntigravitySystemInstruction,
   };
 } else {
 

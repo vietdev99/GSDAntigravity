@@ -21,6 +21,8 @@ const {
     getDirName,
     getGlobalDir,
     getConfigDirFromHome,
+    getAntigravityWorkflowAdapter,
+    getAntigravitySystemInstruction,
 } = require('../bin/install.js');
 
 // ─── convertAntigravityToolName ───────────────────────────────────────────────
@@ -358,5 +360,90 @@ describe('getGlobalDir (antigravity)', () => {
         } else {
             delete process.env.ANTIGRAVITY_CONFIG_DIR;
         }
+    });
+});
+
+// ─── getAntigravityWorkflowAdapter ────────────────────────────────────────────
+
+describe('getAntigravityWorkflowAdapter', () => {
+    test('contains antigravity_tools tags', () => {
+        const result = getAntigravityWorkflowAdapter();
+        assert.ok(result.includes('<antigravity_tools>'), 'has opening tag');
+        assert.ok(result.includes('</antigravity_tools>'), 'has closing tag');
+    });
+
+    test('contains key tool mappings', () => {
+        const result = getAntigravityWorkflowAdapter();
+        assert.ok(result.includes('run_command'), 'has run_command');
+        assert.ok(result.includes('notify_user'), 'has notify_user');
+        assert.ok(result.includes('view_file'), 'has view_file');
+        assert.ok(result.includes('write_to_file'), 'has write_to_file');
+        assert.ok(result.includes('replace_file_content'), 'has replace_file_content');
+    });
+
+    test('documents Task() → run_command pattern', () => {
+        const result = getAntigravityWorkflowAdapter();
+        assert.ok(result.includes('Task(subagent_type'), 'mentions Task pattern');
+        assert.ok(result.includes('command_status'), 'mentions command_status');
+    });
+
+    test('documents AskUserQuestion → notify_user pattern', () => {
+        const result = getAntigravityWorkflowAdapter();
+        assert.ok(result.includes('AskUserQuestion'), 'mentions AskUserQuestion');
+        assert.ok(result.includes('BlockedOnUser'), 'mentions BlockedOnUser');
+    });
+
+    test('is smaller than full adapter header', () => {
+        const workflow = getAntigravityWorkflowAdapter();
+        const full = getAntigravityAdapterHeader();
+        assert.ok(workflow.length < full.length, 'compact adapter is shorter');
+    });
+});
+
+// ─── getAntigravitySystemInstruction ──────────────────────────────────────────
+
+describe('getAntigravitySystemInstruction', () => {
+    test('contains GSD title', () => {
+        const result = getAntigravitySystemInstruction('/test/path');
+        assert.ok(result.includes('GSD'), 'has GSD in title');
+        assert.ok(result.includes('Antigravity'), 'mentions Antigravity');
+    });
+
+    test('lists main commands', () => {
+        const result = getAntigravitySystemInstruction('/test/path');
+        assert.ok(result.includes('/gsd:new-project'), 'has new-project');
+        assert.ok(result.includes('/gsd:plan-phase'), 'has plan-phase');
+        assert.ok(result.includes('/gsd:execute-phase'), 'has execute-phase');
+        assert.ok(result.includes('/gsd:progress'), 'has progress');
+        assert.ok(result.includes('/gsd:help'), 'has help');
+    });
+
+    test('contains tool mapping table', () => {
+        const result = getAntigravitySystemInstruction('/test/path');
+        assert.ok(result.includes('view_file'), 'has view_file');
+        assert.ok(result.includes('run_command'), 'has run_command');
+        assert.ok(result.includes('notify_user'), 'has notify_user');
+        assert.ok(result.includes('grep_search'), 'has grep_search');
+    });
+
+    test('includes config dir paths', () => {
+        const result = getAntigravitySystemInstruction('/home/user/.gemini/antigravity');
+        assert.ok(result.includes('commands/gsd/'), 'has commands path');
+        assert.ok(result.includes('agents/'), 'has agents path');
+        assert.ok(result.includes('workflows/'), 'has workflows path');
+    });
+
+    test('documents Task() subagent pattern', () => {
+        const result = getAntigravitySystemInstruction('/test/path');
+        assert.ok(result.includes('Task()'), 'mentions Task()');
+        assert.ok(result.includes('command_status'), 'mentions command_status');
+    });
+
+    test('includes .planning/ project structure', () => {
+        const result = getAntigravitySystemInstruction('/test/path');
+        assert.ok(result.includes('.planning/'), 'has .planning/');
+        assert.ok(result.includes('PROJECT.md'), 'has PROJECT.md');
+        assert.ok(result.includes('ROADMAP.md'), 'has ROADMAP.md');
+        assert.ok(result.includes('STATE.md'), 'has STATE.md');
     });
 });
