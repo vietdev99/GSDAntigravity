@@ -2,7 +2,7 @@
 
 # GET SHIT DONE
 
-**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, and Codex.**
+**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, Codex, and Antigravity IDE.**
 
 **Solves context rot — the quality degradation that happens as Claude fills its context window.**
 
@@ -80,11 +80,11 @@ npx get-shit-done-cc@latest
 ```
 
 The installer prompts you to choose:
-1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, or all
+1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Antigravity, or all
 2. **Location** — Global (all projects) or local (current project only)
 
 Verify with:
-- Claude Code / Gemini: `/gsd:help`
+- Claude Code / Gemini / Antigravity: `/gsd:help`
 - OpenCode: `/gsd-help`
 - Codex: `$gsd-help`
 
@@ -117,12 +117,16 @@ npx get-shit-done-cc --gemini --global   # Install to ~/.gemini/
 npx get-shit-done-cc --codex --global    # Install to ~/.codex/
 npx get-shit-done-cc --codex --local     # Install to ./.codex/
 
+# Antigravity IDE
+npx get-shit-done-cc --antigravity --global  # Install to ~/.gemini/antigravity/
+npx get-shit-done-cc --antigravity --local   # Install to ./.antigravity/
+
 # All runtimes
 npx get-shit-done-cc --all --global      # Install to all directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
-Use `--claude`, `--opencode`, `--gemini`, `--codex`, or `--all` to skip the runtime prompt.
+Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--antigravity`, or `--all` to skip the runtime prompt.
 
 </details>
 
@@ -181,6 +185,79 @@ If you prefer not to use that flag, add this to your project's `.claude/settings
     ]
   }
 }
+```
+
+</details>
+
+---
+
+### Using with Antigravity IDE
+
+<details>
+<summary><strong>Antigravity-specific setup and usage</strong></summary>
+
+#### Installation
+
+```bash
+# Global install (recommended)
+npx get-shit-done-cc --antigravity --global
+
+# Or from local clone
+node bin/install.js --antigravity --global
+```
+
+This installs to `~/.gemini/antigravity/` with:
+- `commands/gsd/` — All GSD commands (`.md` format)
+- `agents/` — 11 specialized agents with Antigravity tool names
+- `get-shit-done/` — Core runtime (workflows, templates, references)
+- `hooks/` — Statusline, update check, context monitor
+- `settings.json` — Config with `experimental.enableAgents: true`
+
+#### Tool Mapping
+
+GSD was originally built for Claude Code. In Antigravity, tool names are automatically converted:
+
+| Claude Code | Antigravity | Description |
+|-------------|-------------|-------------|
+| `Read` | `view_file` | Read file contents |
+| `Write` | `write_to_file` | Create/overwrite files |
+| `Edit` | `replace_file_content` | Edit existing files |
+| `Bash` | `run_command` | Execute shell commands |
+| `Task` | `run_command` | Spawn subagents via terminal |
+| `AskUserQuestion` | `notify_user` | Interactive user prompts |
+| `Glob` | `find_by_name` | Find files by pattern |
+| `Grep` | `grep_search` | Search file contents |
+
+#### How It Works
+
+Each GSD command includes an `<antigravity_adapter>` header that instructs the AI how to translate Claude Code patterns to Antigravity equivalents. This means:
+
+- **`Task()` subagent spawning** → Uses `run_command` to spawn agents via terminal
+- **`AskUserQuestion`** → Uses `notify_user` with `BlockedOnUser: true`
+- **All path references** → Automatically rewritten to `~/.gemini/antigravity/`
+
+#### Commands
+
+Same commands as Claude Code / Gemini — use the `/gsd:` prefix:
+
+```
+/gsd:new-project          # Initialize a new project
+/gsd:plan-phase 1         # Plan phase 1
+/gsd:execute-phase 1      # Execute phase 1
+/gsd:progress             # View overall progress
+/gsd:help                 # Show all commands
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTIGRAVITY_CONFIG_DIR` | `~/.gemini/antigravity` | Override global config directory |
+
+#### Uninstall
+
+```bash
+npx get-shit-done-cc --antigravity --global --uninstall
 ```
 
 </details>
