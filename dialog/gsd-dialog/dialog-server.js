@@ -22,13 +22,13 @@ const { execSync } = require('child_process');
 const args = process.argv.slice(2);
 let dataFile = '', port = 0;
 for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--data' || args[i] === '-d') dataFile = args[++i];
-    if (args[i] === '--port' || args[i] === '-p') port = parseInt(args[++i]) || 0;
+  if (args[i] === '--data' || args[i] === '-d') dataFile = args[++i];
+  if (args[i] === '--port' || args[i] === '-p') port = parseInt(args[++i]) || 0;
 }
 
 if (!dataFile || !fs.existsSync(dataFile)) {
-    console.log(JSON.stringify({ error: 'No data file', cancelled: true }));
-    process.exit(1);
+  console.log(JSON.stringify({ error: 'No data file', cancelled: true }));
+  process.exit(1);
 }
 
 const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
@@ -36,10 +36,10 @@ const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
 // ─── HTML Template ────────────────────────────────────────────────────────────
 
 function buildHTML(data) {
-    const questionsJSON = JSON.stringify(data.questions);
-    const title = data.title || 'GSD Dialog';
+  const questionsJSON = JSON.stringify(data.questions);
+  const title = data.title || 'GSD Dialog';
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -326,11 +326,13 @@ function doSubmit() {
     a.id = q.id;
     return a;
   });
-  fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancelled: false, answers: result }) });
+  fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancelled: false, answers: result }) })
+    .then(() => window.close());
 }
 
 function doCancel() {
-  fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancelled: true, answers: [] }) });
+  fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancelled: true, answers: [] }) })
+    .then(() => window.close());
 }
 </script>
 </body>
@@ -342,52 +344,52 @@ function doCancel() {
 const html = buildHTML(data);
 
 const server = http.createServer((req, res) => {
-    if (req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
-        return;
-    }
+  if (req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+    return;
+  }
 
-    if (req.method === 'POST' && req.url === '/submit') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<html><body style="font-family:Segoe UI;background:#1e1e2e;color:#a6e3a1;display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px">✓ Submitted! You can close this tab.</body></html>');
-            console.log(body);
-            setTimeout(() => process.exit(0), 500);
-        });
-        return;
-    }
+  if (req.method === 'POST' && req.url === '/submit') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<html><body style="font-family:Segoe UI;background:#1e1e2e;color:#a6e3a1;display:flex;align-items:center;justify-content:center;height:100vh;font-size:20px">✓ Submitted! You can close this tab.</body></html>');
+      console.log(body);
+      setTimeout(() => process.exit(0), 500);
+    });
+    return;
+  }
 
-    res.writeHead(404);
-    res.end('Not found');
+  res.writeHead(404);
+  res.end('Not found');
 });
 
 server.listen(port, '127.0.0.1', () => {
-    const actualPort = server.address().port;
-    const url = `http://127.0.0.1:${actualPort}`;
+  const actualPort = server.address().port;
+  const url = `http://127.0.0.1:${actualPort}`;
 
-    // Open in Chrome app mode (clean window, no address bar)
-    const { exec } = require('child_process');
-    if (process.platform === 'win32') {
-        // Try Chrome, Edge, then default browser
-        exec(`start chrome --app="${url}" --window-size=800,650`, (err) => {
-            if (err) exec(`start msedge --app="${url}" --window-size=800,650`, (err2) => {
-                if (err2) exec(`start "" "${url}"`, () => { });
-            });
-        });
-    } else if (process.platform === 'darwin') {
-        exec(`open -na "Google Chrome" --args --app="${url}" --window-size=800,650`, (err) => {
-            if (err) exec(`open "${url}"`, () => { });
-        });
-    } else {
-        exec(`google-chrome --app="${url}" --window-size=800,650 2>/dev/null || xdg-open "${url}"`, () => { });
-    }
+  // Open in Chrome app mode (clean window, no address bar)
+  const { exec } = require('child_process');
+  if (process.platform === 'win32') {
+    // Try Chrome, Edge, then default browser
+    exec(`start chrome --app="${url}" --window-size=800,650`, (err) => {
+      if (err) exec(`start msedge --app="${url}" --window-size=800,650`, (err2) => {
+        if (err2) exec(`start "" "${url}"`, () => { });
+      });
+    });
+  } else if (process.platform === 'darwin') {
+    exec(`open -na "Google Chrome" --args --app="${url}" --window-size=800,650`, (err) => {
+      if (err) exec(`open "${url}"`, () => { });
+    });
+  } else {
+    exec(`google-chrome --app="${url}" --window-size=800,650 2>/dev/null || xdg-open "${url}"`, () => { });
+  }
 
-    // Timeout after 10 minutes
-    setTimeout(() => {
-        console.log('{"cancelled":true,"answers":[],"reason":"timeout"}');
-        process.exit(1);
-    }, 600000);
+  // Timeout after 10 minutes
+  setTimeout(() => {
+    console.log('{"cancelled":true,"answers":[],"reason":"timeout"}');
+    process.exit(1);
+  }, 600000);
 });
