@@ -2532,6 +2532,19 @@ function install(isGlobal, runtime = 'claude') {
     }
   }
 
+  // Install dialog CLI for Antigravity & Kiro (interactive modal via run_command)
+  if (isAntigravity || isKiro) {
+    const dialogSrc = path.join(src, 'dialog', 'gsd-dialog');
+    const dialogDest = path.join(targetDir, 'dialog');
+    if (fs.existsSync(dialogSrc)) {
+      fs.mkdirSync(dialogDest, { recursive: true });
+      for (const file of fs.readdirSync(dialogSrc)) {
+        fs.copyFileSync(path.join(dialogSrc, file), path.join(dialogDest, file));
+      }
+      console.log(`  ${green}✓${reset} Installed dialog CLI (interactive modals)`);
+    }
+  }
+
   // Copy agents to agents directory
   const agentsSrc = path.join(src, 'agents');
   if (fs.existsSync(agentsSrc)) {
