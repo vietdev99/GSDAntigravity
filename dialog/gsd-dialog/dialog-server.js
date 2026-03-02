@@ -143,7 +143,8 @@ function startServer(data) {
     border-radius: 8px; cursor: pointer; transition: all 0.2s; font-family: inherit;
   }
   .btn-submit { background: #cba6f7; color: #1e1e2e; }
-  .btn-submit:hover { background: #b4befe; transform: translateY(-1px); }
+  .btn-submit:hover:not(:disabled) { background: #b4befe; transform: translateY(-1px); }
+  .btn-submit:disabled { background: #45475a; color: #6c7086; cursor: not-allowed; opacity: 0.6; }
   .btn-cancel { background: #313244; color: #cdd6f4; }
   .btn-cancel:hover { background: #45475a; }
 </style>
@@ -154,7 +155,7 @@ function startServer(data) {
 <div id="panels"></div>
 <div class="buttons">
   <button class="btn btn-cancel" onclick="doCancel()">Cancel</button>
-  <button class="btn btn-submit" onclick="doSubmit()">Submit</button>
+  <button class="btn btn-submit" id="submitBtn" onclick="doSubmit()" disabled>Submit</button>
 </div>
 
 <script>
@@ -284,6 +285,7 @@ function selectSingle(qid, idx) {
   list.querySelectorAll('.option-item').forEach((el, i) => el.classList.toggle('selected', i === idx));
   const q = questions.find(q => q.id === qid);
   answers[qid].selected = q.options[idx];
+  checkAllAnswered();
 }
 
 function selectMulti(qid, idx) {
@@ -295,12 +297,14 @@ function selectMulti(qid, idx) {
   list.querySelectorAll('.option-item.selected').forEach(el => {
     answers[qid].selected.push(q.options[parseInt(el.dataset.idx)]);
   });
+  checkAllAnswered();
 }
 
 function selectSingleText(qid, idx) {
   selectSingle(qid, idx);
   const textEl = document.getElementById('text-' + qid);
   if (textEl) { textEl.value = ''; answers[qid].text = ''; }
+  checkAllAnswered();
 }
 
 function onTextInput(qid) {
@@ -311,11 +315,13 @@ function onTextInput(qid) {
     answers[qid].selected = null;
   }
   answers[qid].text = textEl.value;
+  checkAllAnswered();
 }
 
 function onMultiText(qid) {
   const textEl = document.getElementById('text-' + qid);
   answers[qid].text = textEl.value;
+  checkAllAnswered();
 }
 
 function selectDesc(qid, idx) {
@@ -330,6 +336,7 @@ function selectDesc(qid, idx) {
     descEl.innerHTML = '<span class="desc-placeholder">No description available.</span>';
   }
   answers[qid].selected = q.options[idx];
+  checkAllAnswered();
 }
 
 // Update text_input answers on change
@@ -337,8 +344,28 @@ document.querySelectorAll('.text-area').forEach(el => {
   el.addEventListener('input', () => {
     const qid = el.id.replace('input-', '');
     answers[qid].value = el.value;
+    checkAllAnswered();
   });
 });
+
+// Validation: enable Submit only when all tabs answered
+function checkAllAnswered() {
+  const btn = document.getElementById('submitBtn');
+  const allDone = questions.every(q => {
+    const a = answers[q.id];
+    if (!a) return false;
+    switch (a.type) {
+      case 'text_input': return a.value && a.value.trim() !== '' && a.value !== (q.placeholder || '');
+      case 'single_select': return a.selected !== null;
+      case 'multi_select': return a.selected && a.selected.length > 0;
+      case 'select_with_text': return a.selected !== null || (a.text && a.text.trim() !== '');
+      case 'multi_select_with_text': return (a.selected && a.selected.length > 0) || (a.text && a.text.trim() !== '');
+      case 'select_with_desc': return a.selected !== null;
+      default: return true;
+    }
+  });
+  btn.disabled = !allDone;
+}
 
 // Submit
 function doSubmit() {
