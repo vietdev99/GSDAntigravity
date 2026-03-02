@@ -1,9 +1,9 @@
 {
-  "name": "get-shit-done-cc",
+  "name": "gsd-ide",
   "version": "1.22.0",
-  "description": "A meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini and Codex by TÂCHES.",
+  "description": "GSD (Get Shit Done) for Antigravity IDE & Kiro IDE — meta-prompting, context engineering and spec-driven development system.",
   "bin": {
-    "get-shit-done-cc": "bin/install.js"
+    "gsd-ide": "bin/install.js"
   },
   "files": [
     "bin",
@@ -22,6 +22,9 @@
     "spec-driven-development",
     "gemini",
     "gemini-cli",
+    "antigravity",
+    "kiro",
+    "kiro-ide",
     "codex",
     "codex-cli"
   ],
@@ -29,11 +32,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/glittercowboy/get-shit-done.git"
+    "url": "git+https://github.com/vietdev99/GSDAntigravity.git"
   },
-  "homepage": "https://github.com/glittercowboy/get-shit-done",
+  "homepage": "https://github.com/vietdev99/GSDAntigravity",
   "bugs": {
-    "url": "https://github.com/glittercowboy/get-shit-done/issues"
+    "url": "https://github.com/vietdev99/GSDAntigravity/issues"
   },
   "engines": {
     "node": ">=16.7.0"
