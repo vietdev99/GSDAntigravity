@@ -2535,7 +2535,7 @@ function install(isGlobal, runtime = 'claude') {
   // Install dialog CLI for Antigravity & Kiro (interactive modal via run_command)
   if (isAntigravity || isKiro) {
     const dialogSrc = path.join(src, 'dialog', 'gsd-dialog');
-    const dialogDest = path.join(targetDir, 'dialog');
+    const dialogDest = path.join(targetDir, 'dialog', 'gsd-dialog');
     if (fs.existsSync(dialogSrc)) {
       fs.mkdirSync(dialogDest, { recursive: true });
       for (const file of fs.readdirSync(dialogSrc)) {
