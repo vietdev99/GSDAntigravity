@@ -2358,6 +2358,59 @@ function reportLocalPatches(configDir, runtime = 'claude') {
   return meta.files || [];
 }
 
+/**
+ * Install workflow wrapper files to .agents/workflows/ for IDE discovery.
+ * For Antigravity and Kiro IDEs, the slash command system discovers
+ * workflows from {.agents,.agent}/workflows/*.md at the project level.
+ * These wrappers tell the AI to read and execute the actual GSD command.
+ *
+ * @param {string} commandsSrc - Path to source commands/gsd/ directory
+ * @param {string} projectDir - Project root directory (where .agents/ will be created)
+ * @param {string} configDir - GSD config directory (where commands/gsd/ is installed)
+ * @param {string} runtime - 'antigravity' or 'kiro'
+ */
+function installWorkflowWrappers(commandsSrc, projectDir, configDir, runtime) {
+  const workflowsDir = path.join(projectDir, '.agents', 'workflows');
+  fs.mkdirSync(workflowsDir, { recursive: true });
+
+  if (!fs.existsSync(commandsSrc)) return 0;
+
+  const configDirDisplay = configDir.replace(/\\/g, '/').replace(os.homedir().replace(/\\/g, '/'), '~');
+  const commands = fs.readdirSync(commandsSrc).filter(f => f.endsWith('.md'));
+  let count = 0;
+
+  for (const cmdFile of commands) {
+    const cmdName = cmdFile.replace('.md', '');
+    const srcPath = path.join(commandsSrc, cmdFile);
+
+    // Extract description from frontmatter
+    let description = `GSD command: ${cmdName}`;
+    try {
+      const content = fs.readFileSync(srcPath, 'utf8');
+      const descMatch = content.match(/^description:\s*(.+)$/m);
+      if (descMatch) description = descMatch[1].trim();
+    } catch { /* use default */ }
+
+    // Create workflow wrapper filename: gsd-new-project.md
+    const wrapperName = `gsd-${cmdName}.md`;
+    const wrapperPath = path.join(workflowsDir, wrapperName);
+
+    const wrapperContent = `---
+description: ${description}
+---
+
+Read and execute the GSD command file at: ${configDirDisplay}/commands/gsd/${cmdFile}
+
+Follow all instructions in that file exactly. The file contains the full workflow, tool mappings, and execution steps for this GSD command.
+`;
+
+    fs.writeFileSync(wrapperPath, wrapperContent);
+    count++;
+  }
+
+  return count;
+}
+
 function install(isGlobal, runtime = 'claude') {
   const isOpencode = runtime === 'opencode';
   const isGemini = runtime === 'gemini';
@@ -2466,6 +2519,17 @@ function install(isGlobal, runtime = 'claude') {
     const steeringContent = getKiroSystemInstruction(targetDir);
     fs.writeFileSync(steeringPath, steeringContent);
     console.log(`  ${green}✓${reset} Created steering/gsd-integration.md`);
+  }
+
+  // Install workflow wrappers for IDE slash command discovery (Antigravity & Kiro)
+  if (isAntigravity || isKiro) {
+    const gsdCommandsSrc = path.join(src, 'commands', 'gsd');
+    const projectDir = isGlobal ? process.cwd() : path.resolve(process.cwd());
+    const wrapperCount = installWorkflowWrappers(gsdCommandsSrc, projectDir, targetDir, runtime);
+    if (wrapperCount > 0) {
+      console.log(`  ${green}✓${reset} Created ${wrapperCount} workflow wrappers in .agents/workflows/`);
+      console.log(`    ${dim}(enables /gsd- slash commands in IDE)${reset}`);
+    }
   }
 
   // Copy agents to agents directory
@@ -2919,6 +2983,7 @@ if (process.env.GSD_TEST_MODE) {
     getKiroWorkflowAdapter,
     getKiroSystemInstruction,
     claudeToKiroTools,
+    installWorkflowWrappers,
   };
 } else {
 
