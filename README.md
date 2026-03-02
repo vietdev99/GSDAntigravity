@@ -2,7 +2,7 @@
 
 # GET SHIT DONE
 
-**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, Codex, and Antigravity IDE.**
+**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, Codex, Antigravity IDE, and Kiro IDE.**
 
 **Solves context rot — the quality degradation that happens as Claude fills its context window.**
 
@@ -80,11 +80,11 @@ npx get-shit-done-cc@latest
 ```
 
 The installer prompts you to choose:
-1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Antigravity, or all
+1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Antigravity, Kiro, or all
 2. **Location** — Global (all projects) or local (current project only)
 
 Verify with:
-- Claude Code / Gemini / Antigravity: `/gsd:help`
+- Claude Code / Gemini / Antigravity / Kiro: `/gsd:help`
 - OpenCode: `/gsd-help`
 - Codex: `$gsd-help`
 
@@ -121,12 +121,16 @@ npx get-shit-done-cc --codex --local     # Install to ./.codex/
 npx get-shit-done-cc --antigravity --global  # Install to ~/.gemini/antigravity/
 npx get-shit-done-cc --antigravity --local   # Install to ./.antigravity/
 
+# Kiro IDE
+npx get-shit-done-cc --kiro --global          # Install to ~/.kiro/
+npx get-shit-done-cc --kiro --local           # Install to ./.kiro/
+
 # All runtimes
 npx get-shit-done-cc --all --global      # Install to all directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
-Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--antigravity`, or `--all` to skip the runtime prompt.
+Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--antigravity`, `--kiro`, or `--all` to skip the runtime prompt.
 
 </details>
 

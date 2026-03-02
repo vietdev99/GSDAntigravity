@@ -42,6 +42,7 @@ const hasClaude = args.includes('--claude');
 const hasGemini = args.includes('--gemini');
 const hasCodex = args.includes('--codex');
 const hasAntigravity = args.includes('--antigravity');
+const hasKiro = args.includes('--kiro');
 const hasBoth = args.includes('--both'); // Legacy flag, keeps working
 const hasAll = args.includes('--all');
 const hasUninstall = args.includes('--uninstall') || args.includes('-u');
@@ -49,7 +50,7 @@ const hasUninstall = args.includes('--uninstall') || args.includes('-u');
 // Runtime selection - can be set by flags or interactive prompt
 let selectedRuntimes = [];
 if (hasAll) {
-  selectedRuntimes = ['claude', 'opencode', 'gemini', 'codex', 'antigravity'];
+  selectedRuntimes = ['claude', 'opencode', 'gemini', 'codex', 'antigravity', 'kiro'];
 } else if (hasBoth) {
   selectedRuntimes = ['claude', 'opencode'];
 } else {
@@ -58,6 +59,7 @@ if (hasAll) {
   if (hasGemini) selectedRuntimes.push('gemini');
   if (hasCodex) selectedRuntimes.push('codex');
   if (hasAntigravity) selectedRuntimes.push('antigravity');
+  if (hasKiro) selectedRuntimes.push('kiro');
 }
 
 // Helper to get directory name for a runtime (used for local/project installs)
@@ -66,6 +68,7 @@ function getDirName(runtime) {
   if (runtime === 'gemini') return '.gemini';
   if (runtime === 'codex') return '.codex';
   if (runtime === 'antigravity') return '.antigravity';
+  if (runtime === 'kiro') return '.kiro';
   return '.claude';
 }
 
@@ -89,6 +92,7 @@ function getConfigDirFromHome(runtime, isGlobal) {
   if (runtime === 'gemini') return "'.gemini'";
   if (runtime === 'codex') return "'.codex'";
   if (runtime === 'antigravity') return "'.gemini', 'antigravity'";
+  if (runtime === 'kiro') return "'.kiro'";
   return "'.claude'";
 }
 
@@ -162,6 +166,17 @@ function getGlobalDir(runtime, explicitDir = null) {
       return expandTilde(process.env.ANTIGRAVITY_CONFIG_DIR);
     }
     return path.join(os.homedir(), '.gemini', 'antigravity');
+  }
+
+  if (runtime === 'kiro') {
+    // Kiro: --config-dir > KIRO_CONFIG_DIR > ~/.kiro
+    if (explicitDir) {
+      return expandTilde(explicitDir);
+    }
+    if (process.env.KIRO_CONFIG_DIR) {
+      return expandTilde(process.env.KIRO_CONFIG_DIR);
+    }
+    return path.join(os.homedir(), '.kiro');
   }
 
   // Claude Code: --config-dir > CLAUDE_CONFIG_DIR > ~/.claude
@@ -395,6 +410,22 @@ const claudeToAntigravityTools = {
   Task: 'run_command',
 };
 
+// Tool name mapping from Claude Code to Kiro IDE
+// Kiro uses executeBash for shell commands, otherwise similar to Antigravity
+const claudeToKiroTools = {
+  Read: 'read_file',
+  Write: 'write_file',
+  Edit: 'edit_file',
+  Bash: 'executeBash',
+  Glob: 'list_files',
+  Grep: 'search_files',
+  WebSearch: 'web_search',
+  WebFetch: 'web_fetch',
+  TodoWrite: 'write_file',
+  AskUserQuestion: 'ask_user',
+  Task: 'executeBash',
+};
+
 /**
  * Convert a Claude Code tool name to OpenCode format
  * - Applies special mappings (AskUserQuestion -> question, etc.)
@@ -451,6 +482,25 @@ function convertAntigravityToolName(claudeTool) {
   // Check for explicit mapping
   if (claudeToAntigravityTools[claudeTool]) {
     return claudeToAntigravityTools[claudeTool];
+  }
+  // Default: lowercase
+  return claudeTool.toLowerCase();
+}
+
+/**
+ * Convert a Claude Code tool name to Kiro IDE format
+ * - Applies Claude→Kiro mapping (Read→read_file, Bash→executeBash, etc.)
+ * - Filters out MCP tools (mcp__*)
+ * @returns {string|null} Kiro tool name, or null if tool should be excluded
+ */
+function convertKiroToolName(claudeTool) {
+  // MCP tools: exclude
+  if (claudeTool.startsWith('mcp__')) {
+    return null;
+  }
+  // Check for explicit mapping
+  if (claudeToKiroTools[claudeTool]) {
+    return claudeToKiroTools[claudeTool];
   }
   // Default: lowercase
   return claudeTool.toLowerCase();
@@ -1060,6 +1110,182 @@ function convertClaudeToAntigravityAgent(content) {
   return `---\n${newFrontmatter}\n---${stripSubTags(convertedBody)}`;
 }
 
+/**
+ * Convert Claude Code agent frontmatter to Kiro IDE format
+ * Similar to Antigravity converter but uses Kiro tool names.
+ */
+function convertClaudeToKiroAgent(content) {
+  if (!content.startsWith('---')) return content;
+
+  const endIndex = content.indexOf('---', 3);
+  if (endIndex === -1) return content;
+
+  const frontmatter = content.substring(3, endIndex).trim();
+  const body = content.substring(endIndex + 3);
+
+  const lines = frontmatter.split('\n');
+  const newLines = [];
+  let inAllowedTools = false;
+  const tools = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('allowed-tools:')) {
+      inAllowedTools = true;
+      continue;
+    }
+
+    if (trimmed.startsWith('tools:')) {
+      const toolsValue = trimmed.substring(6).trim();
+      if (toolsValue) {
+        const parsed = toolsValue.split(',').map(t => t.trim()).filter(t => t);
+        for (const t of parsed) {
+          const mapped = convertKiroToolName(t);
+          if (mapped) tools.push(mapped);
+        }
+      } else {
+        inAllowedTools = true;
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith('color:')) continue;
+
+    if (inAllowedTools) {
+      if (trimmed.startsWith('- ')) {
+        const mapped = convertKiroToolName(trimmed.substring(2).trim());
+        if (mapped) tools.push(mapped);
+        continue;
+      } else if (trimmed && !trimmed.startsWith('-')) {
+        inAllowedTools = false;
+      }
+    }
+
+    if (!inAllowedTools) {
+      newLines.push(line);
+    }
+  }
+
+  if (tools.length > 0) {
+    const uniqueTools = [...new Set(tools)];
+    newLines.push('tools:');
+    for (const tool of uniqueTools) {
+      newLines.push(`  - ${tool}`);
+    }
+  }
+
+  const newFrontmatter = newLines.join('\n').trim();
+
+  let convertedBody = body;
+  convertedBody = convertedBody.replace(/\bAskUserQuestion\b/g, 'ask_user');
+  convertedBody = convertedBody.replace(/\bSlashCommand\b/g, 'command');
+  convertedBody = convertedBody.replace(/\bTodoWrite\b/g, 'write_file');
+
+  return `---\n${newFrontmatter}\n---${stripSubTags(convertedBody)}`;
+}
+
+/**
+ * Get the Kiro adapter header for command/workflow files.
+ */
+function getKiroAdapterHeader() {
+  return `<kiro_adapter>
+## Tool Mapping (Claude Code → Kiro IDE)
+
+When this workflow references Claude Code tools, translate to Kiro equivalents:
+
+| Claude Code | Kiro | Notes |
+|-------------|------|-------|
+| Read | read_file | Read file contents |
+| Write | write_file | Create/overwrite files |
+| Edit | edit_file | Edit existing files |
+| Bash | executeBash | Execute shell commands |
+| Task(subagent_type="X", prompt="Y") | executeBash | Spawn subagent via terminal |
+| AskUserQuestion | ask_user | Interactive user prompts |
+| Glob | list_files | File search |
+| Grep | search_files | Content search |
+
+## Task() → Terminal Spawning
+
+GSD workflows use \`Task(subagent_type="X", prompt="Y")\` to spawn subagents.
+In Kiro, spawn agents via terminal using \`executeBash\`.
+
+## AskUserQuestion → ask_user
+
+Translate \`AskUserQuestion\` calls to \`ask_user\`.
+</kiro_adapter>`;
+}
+
+/**
+ * Get the compact Kiro adapter for workflow files.
+ */
+function getKiroWorkflowAdapter() {
+  return `<kiro_tools>
+## Runtime Tool Mapping
+
+This workflow was written for Claude Code. In Kiro IDE, use these equivalents:
+
+- Task(subagent_type="X", prompt="Y") → use executeBash to spawn subagent
+- AskUserQuestion(header, question, options) → use ask_user
+- Read → read_file | Write → write_file | Edit → edit_file
+- Bash → executeBash | Glob → list_files | Grep → search_files
+</kiro_tools>`;
+}
+
+/**
+ * Get the SYSTEM_INSTRUCTION.md content for Kiro IDE.
+ * @param {string} configDir - The GSD config directory path
+ */
+function getKiroSystemInstruction(configDir) {
+  const configDirDisplay = configDir.replace(/\\/g, '/').replace(require('os').homedir().replace(/\\/g, '/'), '~');
+  return `# GSD (Get Shit Done) — Kiro IDE Integration
+
+You have GSD installed. GSD is a meta-prompting, context engineering and spec-driven development system.
+
+## Available Commands
+
+Run these as slash commands (e.g. \`/gsd:help\`):
+
+| Command | Purpose |
+|---------|---------|
+| /gsd:new-project | Initialize a new project |
+| /gsd:plan-phase N | Create plans for phase N |
+| /gsd:execute-phase N | Execute phase N |
+| /gsd:progress | Show overall progress |
+| /gsd:help | Show all available commands |
+
+Command files: \`${configDirDisplay}/commands/gsd/\`
+Agents: \`${configDirDisplay}/agents/\`
+Workflows: \`${configDirDisplay}/get-shit-done/workflows/\`
+
+## Tool Mapping
+
+| Claude Code | Kiro | Notes |
+|-------------|------|-------|
+| Read | read_file | Read file contents |
+| Write | write_file | Create/overwrite files |
+| Edit | edit_file | Edit existing files |
+| Bash | executeBash | Execute shell commands |
+| Task() | executeBash | Spawn subagents via terminal |
+| AskUserQuestion | ask_user | Interactive prompts |
+| Glob | list_files | File search |
+| Grep | search_files | Content search |
+
+## Project Structure
+
+When GSD initializes a project, it creates:
+\`\`\`
+.planning/
+├── PROJECT.md          # Project context
+├── REQUIREMENTS.md     # Detailed requirements
+├── ROADMAP.md          # Phase-based roadmap
+├── STATE.md            # Current state
+├── config.json         # Settings
+└── phases/             # Phase plans and summaries
+\`\`\`
+`;
+}
+
 function convertClaudeToOpencodeFrontmatter(content) {
   // Replace tool name references in content (applies to all files)
   let convertedContent = content;
@@ -1396,6 +1622,27 @@ function copyWithPathReplacement(srcDir, destDir, pathPrefix, runtime, isCommand
         } else if (srcPath.includes('workflows')) {
           // Workflow files: add compact adapter at the top
           const workflowAdapter = getAntigravityWorkflowAdapter();
+          content = `${workflowAdapter}\n\n${content}`;
+        }
+        fs.writeFileSync(destPath, content);
+      } else if (runtime === 'kiro') {
+        // Strip <sub> tags for all kiro files
+        content = stripSubTags(content);
+
+        // Convert tool name references in body text
+        content = content.replace(/\bAskUserQuestion\b/g, 'ask_user');
+        content = content.replace(/\bTodoWrite\b/g, 'write_file');
+
+        if (isCommand) {
+          const adapter = getKiroAdapterHeader();
+          const { frontmatter, body } = extractFrontmatterAndBody(content);
+          if (frontmatter) {
+            content = `---\n${frontmatter}\n---\n\n${adapter}\n\n${body.trimStart()}`;
+          } else {
+            content = `${adapter}\n\n${content}`;
+          }
+        } else if (srcPath.includes('workflows')) {
+          const workflowAdapter = getKiroWorkflowAdapter();
           content = `${workflowAdapter}\n\n${content}`;
         }
         fs.writeFileSync(destPath, content);
@@ -2116,6 +2363,7 @@ function install(isGlobal, runtime = 'claude') {
   const isGemini = runtime === 'gemini';
   const isCodex = runtime === 'codex';
   const isAntigravity = runtime === 'antigravity';
+  const isKiro = runtime === 'kiro';
   const dirName = getDirName(runtime);
   const src = path.join(__dirname, '..');
 
@@ -2140,6 +2388,7 @@ function install(isGlobal, runtime = 'claude') {
   if (isGemini) runtimeLabel = 'Gemini';
   if (isCodex) runtimeLabel = 'Codex';
   if (isAntigravity) runtimeLabel = 'Antigravity';
+  if (isKiro) runtimeLabel = 'Kiro';
 
   console.log(`  Installing for ${cyan}${runtimeLabel}${reset} to ${cyan}${locationLabel}${reset}\n`);
 
@@ -2178,7 +2427,7 @@ function install(isGlobal, runtime = 'claude') {
       failures.push('skills/gsd-*');
     }
   } else {
-    // Claude Code, Gemini & Antigravity: nested structure in commands/ directory
+    // Claude Code, Gemini, Antigravity & Kiro: nested structure in commands/ directory
     const commandsDir = path.join(targetDir, 'commands');
     fs.mkdirSync(commandsDir, { recursive: true });
 
@@ -2202,12 +2451,21 @@ function install(isGlobal, runtime = 'claude') {
     failures.push('get-shit-done');
   }
 
-  // Create SYSTEM_INSTRUCTION.md for Antigravity IDE
+  // Create SYSTEM_INSTRUCTION.md for Antigravity IDE and Kiro IDE
   if (isAntigravity) {
     const sysInstructionPath = path.join(targetDir, 'SYSTEM_INSTRUCTION.md');
     const sysInstructionContent = getAntigravitySystemInstruction(targetDir);
     fs.writeFileSync(sysInstructionPath, sysInstructionContent);
     console.log(`  ${green}✓${reset} Created SYSTEM_INSTRUCTION.md`);
+  }
+  if (isKiro) {
+    // Kiro: create steering file in .kiro/steering/
+    const steeringDir = path.join(targetDir, 'steering');
+    fs.mkdirSync(steeringDir, { recursive: true });
+    const steeringPath = path.join(steeringDir, 'gsd-integration.md');
+    const steeringContent = getKiroSystemInstruction(targetDir);
+    fs.writeFileSync(steeringPath, steeringContent);
+    console.log(`  ${green}✓${reset} Created steering/gsd-integration.md`);
   }
 
   // Copy agents to agents directory
@@ -2241,6 +2499,8 @@ function install(isGlobal, runtime = 'claude') {
           content = convertClaudeToGeminiAgent(content);
         } else if (isAntigravity) {
           content = convertClaudeToAntigravityAgent(content);
+        } else if (isKiro) {
+          content = convertClaudeToKiroAgent(content);
         } else if (isCodex) {
           content = convertClaudeAgentToCodexAgent(content);
         }
@@ -2347,8 +2607,8 @@ function install(isGlobal, runtime = 'claude') {
     ? buildHookCommand(targetDir, 'gsd-context-monitor.js')
     : 'node ' + dirName + '/hooks/gsd-context-monitor.js';
 
-  // Enable experimental agents for Gemini CLI and Antigravity (required for custom sub-agents)
-  if (isGemini || isAntigravity) {
+  // Enable experimental agents for Gemini CLI, Antigravity, and Kiro (required for custom sub-agents)
+  if (isGemini || isAntigravity || isKiro) {
     if (!settings.experimental) {
       settings.experimental = {};
     }
@@ -2438,6 +2698,7 @@ function finishInstall(settingsPath, settings, statuslineCommand, shouldInstallS
   if (runtime === 'gemini') program = 'Gemini';
   if (runtime === 'codex') program = 'Codex';
   if (runtime === 'antigravity') program = 'Antigravity';
+  if (runtime === 'kiro') program = 'Kiro';
 
   let command = '/gsd:new-project';
   if (runtime === 'opencode') command = '/gsd-new-project';
@@ -2524,15 +2785,18 @@ function promptRuntime(callback) {
   ${cyan}3${reset}) Gemini        ${dim}(~/.gemini)${reset}
   ${cyan}4${reset}) Codex         ${dim}(~/.codex)${reset}
   ${cyan}5${reset}) Antigravity   ${dim}(~/.gemini/antigravity)${reset}
-  ${cyan}6${reset}) All
+  ${cyan}6${reset}) Kiro          ${dim}(~/.kiro)${reset}
+  ${cyan}7${reset}) All
 `);
 
   rl.question(`  Choice ${dim}[1]${reset}: `, (answer) => {
     answered = true;
     rl.close();
     const choice = answer.trim() || '1';
-    if (choice === '6') {
-      callback(['claude', 'opencode', 'gemini', 'codex', 'antigravity']);
+    if (choice === '7') {
+      callback(['claude', 'opencode', 'gemini', 'codex', 'antigravity', 'kiro']);
+    } else if (choice === '6') {
+      callback(['kiro']);
     } else if (choice === '5') {
       callback(['antigravity']);
     } else if (choice === '4') {
@@ -2603,7 +2867,7 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
     results.push(result);
   }
 
-  const statuslineRuntimes = ['claude', 'gemini', 'antigravity'];
+  const statuslineRuntimes = ['claude', 'gemini', 'antigravity', 'kiro'];
   const primaryStatuslineResult = results.find(r => statuslineRuntimes.includes(r.runtime));
 
   const finalize = (shouldInstallStatusline) => {
@@ -2649,6 +2913,12 @@ if (process.env.GSD_TEST_MODE) {
     getConfigDirFromHome,
     getAntigravityWorkflowAdapter,
     getAntigravitySystemInstruction,
+    convertKiroToolName,
+    convertClaudeToKiroAgent,
+    getKiroAdapterHeader,
+    getKiroWorkflowAdapter,
+    getKiroSystemInstruction,
+    claudeToKiroTools,
   };
 } else {
 
