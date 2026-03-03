@@ -992,11 +992,59 @@ GSD workflows reference Claude Code tools. In Antigravity, map them as follows:
 | Edit | replace_file_content | Use multi_replace_file_content for non-contiguous edits |
 | Bash | run_command | Use command_status to monitor output |
 | Task() | run_command | Spawn subagents via terminal |
-| AskUserQuestion | notify_user | Set BlockedOnUser=true for questions |
+| AskUserQuestion | run_command | Use dialog-server.js (see below) |
 | Glob | find_by_name | File search with glob patterns |
 | Grep | grep_search | Ripgrep-based content search |
 | WebSearch | search_web | Web search |
 | WebFetch | read_url_content | Fetch URL content |
+
+## AskUserQuestion — Interactive Dialog
+
+\`AskUserQuestion\` is NOT a native tool. Use \`dialog-server.js\` via \`run_command\` to show browser-based interactive dialogs.
+
+### How to Use
+
+1. Build a JSON object with your questions
+2. Pipe it to dialog-server.js via run_command:
+
+\`\`\`bash
+echo '{"title":"Dialog Title","questions":[{"id":"q1","label":"Tab1","type":"single_select","message":"Pick one:","options":["A","B","C"]}]}' | node "${configDirDisplay}/dialog/gsd-dialog/dialog-server.js"
+\`\`\`
+
+3. The command opens a Chrome window, blocks until user submits, then outputs JSON to stdout
+4. Use \`command_status\` with \`WaitDurationSeconds: 300\` to wait for the response
+
+### Mapping AskUserQuestion Fields to JSON
+
+| AskUserQuestion | dialog JSON | Notes |
+|---|---|---|
+| \`header\` | \`label\` | Tab name |
+| \`question\` | \`message\` | Bold question text |
+| \`multiSelect: false\` | \`type: "single_select"\` or \`"select_with_desc"\` | Use select_with_desc if options have descriptions |
+| \`multiSelect: true\` | \`type: "multi_select"\` | Pick many |
+| \`options[].label\` | \`options[]\` | Array of option strings |
+| \`options[].description\` | \`descriptions[]\` | Use \`select_with_desc\` type |
+
+### Available Types
+
+- \`single_select\` — Pick one (no descriptions)
+- \`multi_select\` — Pick many (no descriptions)
+- \`text_input\` — Free text (\`placeholder\` optional)
+- \`select_with_text\` — Pick one OR type custom (mutually exclusive)
+- \`multi_select_with_text\` — Pick many + optional text
+- \`select_with_desc\` — Pick one with markdown description preview
+
+### Batching
+
+When a workflow calls \`AskUserQuestion([...multiple questions...])\`, combine ALL into one \`questions\` array. Each question = one tab. User answers all at once. NEVER show multiple separate dialogs.
+
+### Response Format
+
+\`\`\`json
+{"cancelled": false, "answers": [{"id": "q1", "type": "single_select", "selected": "A"}]}
+\`\`\`
+
+If \`cancelled: true\`, user clicked Cancel — abort the workflow.
 
 ## Task() Subagent Pattern
 
