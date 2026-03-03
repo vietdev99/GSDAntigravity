@@ -2359,18 +2359,18 @@ function reportLocalPatches(configDir, runtime = 'claude') {
 }
 
 /**
- * Install workflow wrapper files to .agents/workflows/ for IDE discovery.
- * For Antigravity and Kiro IDEs, the slash command system discovers
- * workflows from {.agents,.agent}/workflows/*.md at the project level.
+ * Install workflow wrapper files for IDE discovery.
+ * For Antigravity: .agent/workflows/, For Kiro: _agent/workflows/
  * These wrappers tell the AI to read and execute the actual GSD command.
  *
  * @param {string} commandsSrc - Path to source commands/gsd/ directory
- * @param {string} projectDir - Project root directory (where .agents/ will be created)
+ * @param {string} projectDir - Project root directory
  * @param {string} configDir - GSD config directory (where commands/gsd/ is installed)
  * @param {string} runtime - 'antigravity' or 'kiro'
  */
 function installWorkflowWrappers(commandsSrc, projectDir, configDir, runtime) {
-  const workflowsDir = path.join(projectDir, '.agents', 'workflows');
+  const agentDirName = runtime === 'kiro' ? '_agent' : '.agent';
+  const workflowsDir = path.join(projectDir, agentDirName, 'workflows');
   fs.mkdirSync(workflowsDir, { recursive: true });
 
   if (!fs.existsSync(commandsSrc)) return 0;
@@ -2525,9 +2525,10 @@ function install(isGlobal, runtime = 'claude') {
   if (isAntigravity || isKiro) {
     const gsdCommandsSrc = path.join(src, 'commands', 'gsd');
     const projectDir = isGlobal ? process.cwd() : path.resolve(process.cwd());
+    const agentDirName = runtime === 'kiro' ? '_agent' : '.agent';
     const wrapperCount = installWorkflowWrappers(gsdCommandsSrc, projectDir, targetDir, runtime);
     if (wrapperCount > 0) {
-      console.log(`  ${green}✓${reset} Created ${wrapperCount} workflow wrappers in .agents/workflows/`);
+      console.log(`  ${green}✓${reset} Created ${wrapperCount} workflow wrappers in ${agentDirName}/workflows/`);
       console.log(`    ${dim}(enables /gsd- slash commands in IDE)${reset}`);
     }
   }
