@@ -2593,6 +2593,21 @@ function install(isGlobal, runtime = 'claude') {
       console.log(`  ${green}✓${reset} Created ${wrapperCount} workflow wrappers in ${agentDirName}/workflows/`);
       console.log(`    ${dim}(enables /gsd- slash commands in IDE)${reset}`);
     }
+
+    // Copy standalone workflows (e.g., bmad-fix, gsd-import-bmad, gsd-test-modal)
+    const standaloneSrc = path.join(src, 'get-shit-done', 'standalone-workflows');
+    if (fs.existsSync(standaloneSrc)) {
+      const workflowsDir = path.join(projectDir, agentDirName, 'workflows');
+      fs.mkdirSync(workflowsDir, { recursive: true });
+      let standaloneCount = 0;
+      for (const file of fs.readdirSync(standaloneSrc).filter(f => f.endsWith('.md'))) {
+        fs.copyFileSync(path.join(standaloneSrc, file), path.join(workflowsDir, file));
+        standaloneCount++;
+      }
+      if (standaloneCount > 0) {
+        console.log(`  ${green}✓${reset} Installed ${standaloneCount} standalone workflow(s)`);
+      }
+    }
   }
 
   // Install dialog CLI for Antigravity & Kiro (interactive modal via run_command)
