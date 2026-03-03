@@ -12,7 +12,8 @@
     "agents",
     "hooks/dist",
     "dialog",
-    "scripts"
+    "scripts",
+    "docs"
   ],
   "keywords": [
     "claude",

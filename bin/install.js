@@ -2653,6 +2653,24 @@ function install(isGlobal, runtime = 'claude') {
     }
   }
 
+  // Install docs for Antigravity & Kiro (e.g., bmad-gsd-workflow-guide.md)
+  if (isAntigravity || isKiro) {
+    const docsSrc = path.join(src, 'docs');
+    const projectDir = isGlobal ? process.cwd() : path.resolve(process.cwd());
+    const docsDest = path.join(projectDir, 'docs');
+    if (fs.existsSync(docsSrc)) {
+      fs.mkdirSync(docsDest, { recursive: true });
+      let docCount = 0;
+      for (const file of fs.readdirSync(docsSrc).filter(f => f.endsWith('.md'))) {
+        fs.copyFileSync(path.join(docsSrc, file), path.join(docsDest, file));
+        docCount++;
+      }
+      if (docCount > 0) {
+        console.log(`  ${green}✓${reset} Installed ${docCount} doc(s) in docs/`);
+      }
+    }
+  }
+
   // Copy agents to agents directory
   const agentsSrc = path.join(src, 'agents');
   if (fs.existsSync(agentsSrc)) {
