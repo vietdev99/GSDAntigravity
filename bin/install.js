@@ -2383,19 +2383,22 @@ function installWorkflowWrappers(commandsSrc, projectDir, configDir, runtime) {
     const cmdName = cmdFile.replace('.md', '');
     const srcPath = path.join(commandsSrc, cmdFile);
 
-    // Extract description from frontmatter
+    // Extract description and check for AskUserQuestion from frontmatter
     let description = `GSD command: ${cmdName}`;
+    let usesAskUser = false;
     try {
       const content = fs.readFileSync(srcPath, 'utf8');
       const descMatch = content.match(/^description:\s*(.+)$/m);
       if (descMatch) description = descMatch[1].trim();
+      usesAskUser = /AskUserQuestion/i.test(content);
     } catch { /* use default */ }
 
     // Create workflow wrapper filename: gsd-new-project.md
     const wrapperName = `gsd-${cmdName}.md`;
     const wrapperPath = path.join(workflowsDir, wrapperName);
 
-    const wrapperContent = `---
+    // Build wrapper content
+    let wrapperContent = `---
 description: ${description}
 ---
 
@@ -2403,6 +2406,17 @@ Read and execute the GSD command file at: ${configDirDisplay}/commands/gsd/${cmd
 
 Follow all instructions in that file exactly. The file contains the full workflow, tool mappings, and execution steps for this GSD command.
 `;
+
+    // Inject dialog skill reference for commands that use AskUserQuestion
+    if (usesAskUser) {
+      const skillPath = path.join(projectDir, agentDirName, 'skills', 'gsd-dialog', 'SKILL.md')
+        .replace(/\\/g, '/');
+      wrapperContent += `
+**IMPORTANT — AskUserQuestion Implementation:**
+This command uses \`AskUserQuestion\` which is NOT a native tool. Before executing, read the skill file at: ${skillPath}
+That file explains how to show interactive browser-based dialogs via \`dialog-server.js\` instead of plain text questions. You MUST use the dialog system for ALL user questions in this workflow.
+`;
+    }
 
     fs.writeFileSync(wrapperPath, wrapperContent);
     count++;
