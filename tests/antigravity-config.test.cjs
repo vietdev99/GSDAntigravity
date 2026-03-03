@@ -422,7 +422,7 @@ describe('getAntigravitySystemInstruction', () => {
         const result = getAntigravitySystemInstruction('/test/path');
         assert.ok(result.includes('view_file'), 'has view_file');
         assert.ok(result.includes('run_command'), 'has run_command');
-        assert.ok(result.includes('notify_user'), 'has notify_user');
+        assert.ok(result.includes('dialog-server.js'), 'has dialog-server.js for AskUserQuestion');
         assert.ok(result.includes('grep_search'), 'has grep_search');
     });
 
