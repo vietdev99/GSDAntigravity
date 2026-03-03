@@ -2547,7 +2547,7 @@ function install(isGlobal, runtime = 'claude') {
 
   // Install skills for Antigravity & Kiro (e.g., gsd-dialog SKILL.md)
   if (isAntigravity || isKiro) {
-    const skillsSrc = path.join(src, '.agent', 'skills');
+    const skillsSrc = path.join(src, 'get-shit-done', 'skills');
     const projectDir = isGlobal ? process.cwd() : path.resolve(process.cwd());
     // Determine the IDE's agent directory name
     const agentDirName = isKiro ? '_agent' : '.agent';
