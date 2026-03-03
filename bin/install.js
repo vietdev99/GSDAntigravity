@@ -2545,6 +2545,36 @@ function install(isGlobal, runtime = 'claude') {
     }
   }
 
+  // Install skills for Antigravity & Kiro (e.g., gsd-dialog SKILL.md)
+  if (isAntigravity || isKiro) {
+    const skillsSrc = path.join(src, '.agent', 'skills');
+    const projectDir = isGlobal ? process.cwd() : path.resolve(process.cwd());
+    // Determine the IDE's agent directory name
+    const agentDirName = isKiro ? '_agent' : '.agent';
+    const skillsDest = path.join(projectDir, agentDirName, 'skills');
+    if (fs.existsSync(skillsSrc)) {
+      let skillCount = 0;
+      // Recursively copy skills directories
+      const copyDir = (srcDir, destDir) => {
+        fs.mkdirSync(destDir, { recursive: true });
+        for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+          const srcPath = path.join(srcDir, entry.name);
+          const destPath = path.join(destDir, entry.name);
+          if (entry.isDirectory()) {
+            copyDir(srcPath, destPath);
+          } else {
+            fs.copyFileSync(srcPath, destPath);
+            if (entry.name === 'SKILL.md') skillCount++;
+          }
+        }
+      };
+      copyDir(skillsSrc, skillsDest);
+      if (skillCount > 0) {
+        console.log(`  ${green}✓${reset} Installed ${skillCount} skill(s) in ${agentDirName}/skills/`);
+      }
+    }
+  }
+
   // Copy agents to agents directory
   const agentsSrc = path.join(src, 'agents');
   if (fs.existsSync(agentsSrc)) {
