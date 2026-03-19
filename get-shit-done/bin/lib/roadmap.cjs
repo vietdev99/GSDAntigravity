@@ -4,10 +4,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { escapeRegex, normalizePhaseName, output, error, findPhaseInternal } = require('./core.cjs');
+const { escapeRegex, normalizePhaseName, planningPaths, output, error, findPhaseInternal, stripShippedMilestones, extractCurrentMilestone, replaceInCurrentMilestone } = require('./core.cjs');
 
 function cmdRoadmapGetPhase(cwd, phaseNum, raw) {
-  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
+  const roadmapPath = planningPaths(cwd).roadmap;
 
   if (!fs.existsSync(roadmapPath)) {
     output({ found: false, error: 'ROADMAP.md not found' }, raw, '');
@@ -15,7 +15,7 @@ function cmdRoadmapGetPhase(cwd, phaseNum, raw) {
   }
 
   try {
-    const content = fs.readFileSync(roadmapPath, 'utf-8');
+    const content = extractCurrentMilestone(fs.readFileSync(roadmapPath, 'utf-8'), cwd);
 
     // Escape special regex chars in phase number, handle decimal
     const escapedPhase = escapeRegex(phaseNum);
@@ -63,8 +63,8 @@ function cmdRoadmapGetPhase(cwd, phaseNum, raw) {
 
     const section = content.slice(headerIndex, sectionEnd).trim();
 
-    // Extract goal if present
-    const goalMatch = section.match(/\*\*Goal:\*\*\s*([^\n]+)/i);
+    // Extract goal if present (supports both **Goal:** and **Goal**: formats)
+    const goalMatch = section.match(/\*\*Goal(?::\*\*|\*\*:)\s*([^\n]+)/i);
     const goal = goalMatch ? goalMatch[1].trim() : null;
 
     // Extract success criteria as structured array
@@ -91,15 +91,16 @@ function cmdRoadmapGetPhase(cwd, phaseNum, raw) {
 }
 
 function cmdRoadmapAnalyze(cwd, raw) {
-  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
+  const roadmapPath = planningPaths(cwd).roadmap;
 
   if (!fs.existsSync(roadmapPath)) {
     output({ error: 'ROADMAP.md not found', milestones: [], phases: [], current_phase: null }, raw);
     return;
   }
 
-  const content = fs.readFileSync(roadmapPath, 'utf-8');
-  const phasesDir = path.join(cwd, '.planning', 'phases');
+  const rawContent = fs.readFileSync(roadmapPath, 'utf-8');
+  const content = extractCurrentMilestone(rawContent, cwd);
+  const phasesDir = planningPaths(cwd).phases;
 
   // Extract all phase headings: ## Phase N: Name or ### Phase N: Name
   const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:\s*([^\n]+)/gi;
@@ -117,10 +118,10 @@ function cmdRoadmapAnalyze(cwd, raw) {
     const sectionEnd = nextHeader ? sectionStart + nextHeader.index : content.length;
     const section = content.slice(sectionStart, sectionEnd);
 
-    const goalMatch = section.match(/\*\*Goal:\*\*\s*([^\n]+)/i);
+    const goalMatch = section.match(/\*\*Goal(?::\*\*|\*\*:)\s*([^\n]+)/i);
     const goal = goalMatch ? goalMatch[1].trim() : null;
 
-    const dependsMatch = section.match(/\*\*Depends on:\*\*\s*([^\n]+)/i);
+    const dependsMatch = section.match(/\*\*Depends on(?::\*\*|\*\*:)\s*([^\n]+)/i);
     const depends_on = dependsMatch ? dependsMatch[1].trim() : null;
 
     // Check completion on disk
@@ -150,12 +151,19 @@ function cmdRoadmapAnalyze(cwd, raw) {
         else if (hasContext) diskStatus = 'discussed';
         else diskStatus = 'empty';
       }
-    } catch {}
+    } catch { /* intentionally empty */ }
 
     // Check ROADMAP checkbox status
-    const checkboxPattern = new RegExp(`-\\s*\\[(x| )\\]\\s*.*Phase\\s+${escapeRegex(phaseNum)}`, 'i');
+    const checkboxPattern = new RegExp(`-\\s*\\[(x| )\\]\\s*.*Phase\\s+${escapeRegex(phaseNum)}[:\\s]`, 'i');
     const checkboxMatch = content.match(checkboxPattern);
     const roadmapComplete = checkboxMatch ? checkboxMatch[1] === 'x' : false;
+
+    // If roadmap marks phase complete, trust that over disk file structure.
+    // Phases completed before GSD tracking (or via external tools) may lack
+    // the standard PLAN/SUMMARY pairs but are still done.
+    if (roadmapComplete && diskStatus !== 'complete') {
+      diskStatus = 'complete';
+    }
 
     phases.push({
       number: phaseNum,
@@ -173,7 +181,7 @@ function cmdRoadmapAnalyze(cwd, raw) {
 
   // Extract milestone info
   const milestones = [];
-  const milestonePattern = /##\s*(.*v(\d+\.\d+)[^(\n]*)/gi;
+  const milestonePattern = /##\s*(.*v(\d+(?:\.\d+)+)[^(\n]*)/gi;
   let mMatch;
   while ((mMatch = milestonePattern.exec(content)) !== null) {
     milestones.push({
@@ -222,7 +230,7 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
     error('phase number required for roadmap update-plan-progress');
   }
 
-  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
+  const roadmapPath = planningPaths(cwd).roadmap;
 
   const phaseInfo = findPhaseInternal(cwd, phaseNum);
   if (!phaseInfo) {
@@ -255,8 +263,8 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
     'i'
   );
   const dateField = isComplete ? ` ${today} ` : '  ';
-  roadmapContent = roadmapContent.replace(
-    tablePattern,
+  roadmapContent = replaceInCurrentMilestone(
+    roadmapContent, tablePattern,
     `$1 ${summaryCount}/${planCount} $2 ${status.padEnd(11)}$3${dateField}$4`
   );
 
@@ -268,7 +276,7 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
   const planCountText = isComplete
     ? `${summaryCount}/${planCount} plans complete`
     : `${summaryCount}/${planCount} plans executed`;
-  roadmapContent = roadmapContent.replace(planCountPattern, `$1${planCountText}`);
+  roadmapContent = replaceInCurrentMilestone(roadmapContent, planCountPattern, `$1${planCountText}`);
 
   // If complete: check checkbox
   if (isComplete) {
@@ -276,7 +284,19 @@ function cmdRoadmapUpdatePlanProgress(cwd, phaseNum, raw) {
       `(-\\s*\\[)[ ](\\]\\s*.*Phase\\s+${phaseEscaped}[:\\s][^\\n]*)`,
       'i'
     );
-    roadmapContent = roadmapContent.replace(checkboxPattern, `$1x$2 (completed ${today})`);
+    roadmapContent = replaceInCurrentMilestone(roadmapContent, checkboxPattern, `$1x$2 (completed ${today})`);
+  }
+
+  // Mark completed plan checkboxes (e.g. "- [ ] 50-01-PLAN.md" or "- [ ] 50-01:")
+  for (const summaryFile of phaseInfo.summaries) {
+    const planId = summaryFile.replace('-SUMMARY.md', '').replace('SUMMARY.md', '');
+    if (!planId) continue;
+    const planEscaped = escapeRegex(planId);
+    const planCheckboxPattern = new RegExp(
+      `(-\\s*\\[) (\\]\\s*${planEscaped})`,
+      'i'
+    );
+    roadmapContent = roadmapContent.replace(planCheckboxPattern, '$1x$2');
   }
 
   fs.writeFileSync(roadmapPath, roadmapContent, 'utf-8');

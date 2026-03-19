@@ -6,6 +6,187 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-03-18
+
+### Added
+- **Developer profiling pipeline** — `/gsd:profile-user` analyzes Claude Code session history to build behavioral profiles across 8 dimensions (communication, decisions, debugging, UX, vendor choices, frustrations, learning style, explanation depth). Generates `USER-PROFILE.md`, `/gsd:dev-preferences`, and `CLAUDE.md` profile section. Includes `--questionnaire` fallback and `--refresh` for re-analysis (#1084)
+- **`/gsd:ship` command** — PR creation from verified phase work. Auto-generates rich PR body from planning artifacts, pushes branch, creates PR via `gh`, and updates STATE.md (#829)
+- **`/gsd:next` command** — Automatic workflow advancement to the next logical step (#927)
+- **Cross-phase regression gate** — Execute-phase runs prior phases' test suites after execution, catching regressions before they compound (#945)
+- **Requirements coverage gate** — Plan-phase verifies all phase requirements are covered by at least one plan before proceeding (#984)
+- **Structured session handoff artifact** — `/gsd:pause-work` writes `.planning/HANDOFF.json` for machine-readable cross-session continuity (#940)
+- **WAITING.json signal file** — Machine-readable signal for decision points requiring user input (#1034)
+- **Interactive executor mode** — Pair-programming style execution with step-by-step user involvement (#963)
+- **MCP tool awareness** — GSD subagents can discover and use MCP server tools (#973)
+- **Codex hooks support** — SessionStart hook support for Codex runtime (#1020)
+- **Model alias-to-full-ID resolution** — Task API compatibility for model alias strings (#991)
+- **Execution hardening** — Pre-wave dependency checks, cross-plan data contracts, and export-level spot checks (#1082)
+- **Markdown normalization** — Generated markdown conforms to markdownlint standards (#1112)
+- **`/gsd:audit-uat` command** — Cross-phase audit of all outstanding UAT and verification items. Scans every phase for pending, skipped, blocked, and human_needed items. Cross-references against codebase to detect stale documentation. Produces prioritized human test plan grouped by testability
+- **Verification debt tracking** — Five structural improvements to prevent silent loss of UAT/verification items when projects advance:
+  - Cross-phase health check in `/gsd:progress` (Step 1.6) surfaces outstanding items from ALL prior phases
+  - `status: partial` in UAT files distinguishes incomplete testing from completed sessions
+  - `result: blocked` with `blocked_by` tag for tests blocked by external dependencies (server, device, build, third-party)
+  - `human_needed` verification items now persist as HUMAN-UAT.md files (trackable across sessions)
+  - Phase completion and transition warnings surface verification debt non-blockingly
+
+### Changed
+- Test suite consolidated: runtime converters deduplicated, helpers standardized (#1169)
+- Added test coverage for model-profiles, templates, profile-pipeline, profile-output (#1170)
+- Documented `inherit` profile for non-Anthropic providers (#1036)
+
+### Fixed
+- Agent suggests non-existent `/gsd:transition` — replaced with real commands (#1081, #1100)
+- PROJECT.md drift and phase completion counter accuracy (#956)
+- Copilot executor stuck issue — runtime compatibility fallback added (#1128)
+- Explicit agent type listings prevent fallback after `/clear` (#949)
+- Nested Skill calls breaking AskUserQuestion (#1009)
+- Negative-heuristic `stripShippedMilestones` replaced with positive milestone lookup (#1145)
+- Hook version tracking, stale hook detection, stdin timeout, session-report command (#1153, #1157, #1161, #1162)
+- Hook build script syntax validation (#1165)
+- Verification examples use `fetch()` instead of `curl` for Windows compatibility (#899)
+- Sequential fallback for `map-codebase` on runtimes without Task tool (#1174)
+- Zsh word-splitting fix for RUNTIME_DIRS arrays (#1173)
+- CRLF frontmatter parsing, duplicate cwd crash, STATE.md phase transitions (#1105)
+- Requirements `mark-complete` made idempotent (#948)
+- Profile template paths, field names, and evidence key corrections (#1095)
+- Duplicate variable declaration removed (#1101)
+
+## [1.25.0] - 2026-03-16
+
+### Added
+- **Antigravity runtime support** — Full installation support for the Antigravity AI agent runtime (`--antigravity`), alongside Claude Code, OpenCode, Gemini, Codex, and Copilot
+- **`/gsd:do` command** — Freeform text router that dispatches natural language to the right GSD command
+- **`/gsd:note` command** — Zero-friction idea capture with append, list, and promote-to-todo subcommands
+- **Context window warning toggle** — Config option to disable context monitor warnings (`hooks.context_monitor: false`)
+- **Comprehensive documentation** — New `docs/` directory with feature, architecture, agent, command, CLI, and configuration guides
+
+### Changed
+- `/gsd:discuss-phase` shows remaining discussion areas when asking to continue or move on
+- `/gsd:plan-phase` asks user about research instead of silently deciding
+- Improved GitHub issue and PR templates with industry best practices
+- Settings clarify balanced profile uses Sonnet for research
+
+### Fixed
+- Executor checks for untracked files after task commits
+- Researcher verifies package versions against npm registry before recommending
+- Health check adds CWD guard and strips archived milestones
+- `core.cjs` returns `opus` directly instead of mapping to `inherit`
+- Stats command corrects git and roadmap reporting
+- Init prefers current milestone phase-op targets
+- **Antigravity skills** — `processAttribution` was missing from `copyCommandsAsAntigravitySkills`, causing SKILL.md files to be written without commit attribution metadata
+- Copilot install tests updated for UI agent count changes
+
+## [1.24.0] - 2026-03-15
+
+### Added
+- **`/gsd:quick --research` flag** — Spawns focused research agent before planning, composable with `--discuss` and `--full` (#317)
+- **`inherit` model profile** for OpenCode — agents inherit the user's selected runtime model via `/model`
+- **Persistent debug knowledge base** — resolved debug sessions append to `.planning/debug/knowledge-base.md`, eliminating cold-start investigation on recurring issues
+- **Programmatic `/gsd:set-profile`** — runs as a script instead of LLM-driven workflow, executes in seconds instead of 30-40s
+
+### Fixed
+- ROADMAP.md searches scoped to current milestone — multi-milestone projects no longer match phases from archived milestones
+- OpenCode agent frontmatter conversion — agents get correct `name:`, `model: inherit`, `mode: subagent`
+- `opencode.jsonc` config files respected during install (previously only `.json` was detected) (#1053)
+- Windows installer crash on EPERM/EACCES when scanning protected directories (#964)
+- `gsd-tools.cjs` uses absolute paths in all install types (#820)
+- Invalid `skills:` frontmatter removed from UI agent files
+
+## [1.23.0] - 2026-03-15
+
+### Added
+- `/gsd:ui-phase` + `/gsd:ui-review` — UI design contract generation and retroactive 6-pillar visual audit for frontend phases (closes #986)
+- `/gsd:stats` — project statistics dashboard: phases, plans, requirements, git metrics, and timeline
+- **Copilot CLI** runtime support — install with `--copilot`, maps Claude Code tools to GitHub Copilot tools
+- **`gsd-autonomous` skill** for Codex runtime — enables autonomous GSD execution
+- **Node repair operator** — autonomous recovery when task verification fails: RETRY, DECOMPOSE, or PRUNE before escalating to user. Configurable via `workflow.node_repair_budget` (default: 2 attempts). Disable with `workflow.node_repair: false`
+- Mandatory `read_first` and `acceptance_criteria` sections in plans to prevent shallow execution
+- Mandatory `canonical_refs` section in CONTEXT.md for traceable decisions
+- Quick mode uses `YYMMDD-xxx` timestamp IDs instead of auto-increment numbers
+
+### Changed
+- `/gsd:discuss-phase` supports explicit `--batch` mode for grouped question intake
+
+### Fixed
+- `/gsd:new-milestone` no longer resets `workflow.research` config during milestone transitions
+- `/gsd:update` is runtime-aware and targets the correct runtime directory
+- Phase-complete properly updates REQUIREMENTS.md traceability (closes #848)
+- Auto-advance no longer triggers without `--auto` flag (closes #1026, #932)
+- `--auto` flag correctly skips interactive discussion questions (closes #1025)
+- Decimal phase numbers correctly padded in init.cjs (closes #915)
+- Empty-answer validation guards added to discuss-phase (closes #912)
+- Tilde paths in templates prevent PII leak in `.planning/` files (closes #987)
+- Invalid `commit-docs` command replaced with `commit` in workflows (closes #968)
+- Uninstall mode indicator shown in banner output (closes #1024)
+- WSL + Windows Node.js mismatch detected with user warning (closes #1021)
+- Deprecated Codex config keys removed to fix UI instability
+- Unsupported Gemini agent `skills` frontmatter stripped for compatibility
+- Roadmap `complete` checkbox overrides `disk_status` for phase detection
+- Plan-phase Nyquist validation works when research is disabled (closes #1002)
+- Valid Codex agent TOML emitted by installer
+- Escape characters corrected in grep commands
+
+## [1.22.4] - 2026-03-03
+
+### Added
+- `--discuss` flag for `/gsd:quick` — lightweight pre-planning discussion to gather context before quick tasks
+
+### Fixed
+- Windows: `@file:` protocol resolution for large init payloads (>50KB) — all 32 workflow/agent files now resolve temp file paths instead of letting agents hallucinate `/tmp` paths (#841)
+- Missing `skills` frontmatter on gsd-nyquist-auditor agent
+
+## [1.22.3] - 2026-03-03
+
+### Added
+- Verify-work auto-injects a cold-start smoke test for phases that modify server, database, seed, or startup files — catches warm-state blind spots
+
+### Changed
+- Renamed `depth` setting to `granularity` with values `coarse`/`standard`/`fine` to accurately reflect what it controls (phase count, not investigation depth). Backward-compatible migration auto-renames existing config.
+
+### Fixed
+- Installer now replaces `$HOME/.claude/` paths (not just `~/.claude/`) for non-Claude runtimes — fixes broken commands on local installs and Gemini/OpenCode/Codex installs (#905, #909)
+
+## [1.22.2] - 2026-03-03
+
+### Fixed
+- Codex installer no longer creates duplicate `[features]` and `[agents]` sections on re-install (#902, #882)
+- Context monitor hook is advisory instead of blocking non-GSD workflows
+- Hooks respect `CLAUDE_CONFIG_DIR` for custom config directories
+- Hooks include stdin timeout guard to prevent hanging on pipe errors
+- Statusline context scaling matches autocompact buffer thresholds
+- Gap closure plans compute wave numbers instead of hardcoding wave 1
+- `auto_advance` config flag no longer persists across sessions
+- Phase-complete scans ROADMAP.md as fallback for next-phase detection
+- `getMilestoneInfo()` prefers in-progress milestone marker instead of always returning first
+- State parsing supports both bold and plain field formats
+- Phase counting scoped to current milestone
+- Total phases derived from ROADMAP when phase directories don't exist yet
+- OpenCode detects runtime config directory instead of hardcoding `.claude`
+- Gemini hooks use `AfterTool` event instead of `PostToolUse`
+- Multi-word commit messages preserved in CLI router
+- Regex patterns in milestone/state helpers properly escaped
+- `isGitIgnored` uses `--no-index` for tracked file detection
+- AskUserQuestion freeform answer loop properly breaks on valid input
+- Agent spawn types standardized across all workflows
+
+### Changed
+- Anti-heredoc instruction extended to all file-writing agents
+- Agent definitions include skills frontmatter and hooks examples
+
+### Chores
+- Removed leftover `new-project.md.bak` file
+- Deduplicated `extractField` and phase filter helpers into shared modules
+- Added 47 agent frontmatter and spawn consistency tests
+
+## [1.22.1] - 2026-03-02
+
+### Added
+- Discuss phase now loads prior context (PROJECT.md, REQUIREMENTS.md, STATE.md, and all prior CONTEXT.md files) before identifying gray areas — prevents re-asking questions you've already answered in earlier phases
+
+### Fixed
+- Shell snippets in workflows use `printf` instead of `echo` to prevent jq parse errors with special characters
+
 ## [1.22.0] - 2026-02-27
 
 ### Added
@@ -1391,7 +1572,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - YOLO mode for autonomous execution
 - Interactive mode with checkpoints
 
-[Unreleased]: https://github.com/glittercowboy/get-shit-done/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/glittercowboy/get-shit-done/compare/v1.26.0...HEAD
+[1.26.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.26.0
+[1.25.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.25.0
+[1.24.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.24.0
+[1.23.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.23.0
+[1.22.4]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.22.4
+[1.22.3]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.22.3
+[1.22.2]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.22.2
+[1.22.1]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.22.1
 [1.22.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.22.0
 [1.21.1]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.21.1
 [1.21.0]: https://github.com/glittercowboy/get-shit-done/releases/tag/v1.21.0

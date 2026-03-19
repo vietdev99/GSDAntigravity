@@ -4,6 +4,7 @@
 
 const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
+const { execSync } = require('node:child_process');
 const fs = require('fs');
 const path = require('path');
 const { runGsdTools, createTempProject, cleanup } = require('./helpers.cjs');
@@ -563,6 +564,98 @@ describe('todo complete command', () => {
     const result = runGsdTools('todo complete nonexistent.md', tmpDir);
     assert.ok(!result.success, 'should fail');
     assert.ok(result.error.includes('not found'), 'error mentions not found');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// todo match-phase command
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('todo match-phase command', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+  });
+  afterEach(() => cleanup(tmpDir));
+
+  test('returns empty matches when no todos exist', () => {
+    const result = runGsdTools('todo match-phase 01', tmpDir);
+    assert.ok(result.success, 'should succeed');
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.todo_count, 0);
+    assert.deepStrictEqual(output.matches, []);
+  });
+
+  test('matches todo by keyword overlap with phase name', () => {
+    const pendingDir = path.join(tmpDir, '.planning', 'todos', 'pending');
+    fs.mkdirSync(pendingDir, { recursive: true });
+    fs.writeFileSync(path.join(pendingDir, 'auth-todo.md'),
+      'title: Add OAuth token refresh\narea: auth\ncreated: 2026-03-01\n\nNeed to handle token expiry for OAuth flows.');
+    fs.writeFileSync(path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n### Phase 01: Authentication and Session Management\n\n**Goal:** Implement OAuth login and session handling\n');
+
+    const result = runGsdTools('todo match-phase 01', tmpDir);
+    assert.ok(result.success, 'should succeed');
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.todo_count, 1, 'should find 1 todo');
+    assert.ok(output.matches.length > 0, 'should have matches');
+    assert.strictEqual(output.matches[0].title, 'Add OAuth token refresh');
+    assert.ok(output.matches[0].score > 0, 'score should be positive');
+    assert.ok(output.matches[0].reasons.length > 0, 'should have reasons');
+  });
+
+  test('does not match unrelated todo', () => {
+    const pendingDir = path.join(tmpDir, '.planning', 'todos', 'pending');
+    fs.mkdirSync(pendingDir, { recursive: true });
+    fs.writeFileSync(path.join(pendingDir, 'auth-todo.md'),
+      'title: Add OAuth token refresh\narea: auth\ncreated: 2026-03-01\n\nOAuth token expiry.');
+    fs.writeFileSync(path.join(pendingDir, 'unrelated-todo.md'),
+      'title: Fix CSS grid layout in dashboard\narea: ui\ncreated: 2026-03-01\n\nGrid columns break on mobile.');
+    fs.writeFileSync(path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n### Phase 01: Authentication and Session Management\n\n**Goal:** Implement OAuth login and session handling\n');
+
+    const result = runGsdTools('todo match-phase 01', tmpDir);
+    assert.ok(result.success, 'should succeed');
+    const output = JSON.parse(result.output);
+    const matchTitles = output.matches.map(m => m.title);
+    assert.ok(matchTitles.includes('Add OAuth token refresh'), 'auth todo should match');
+    assert.ok(!matchTitles.includes('Fix CSS grid layout in dashboard'), 'unrelated todo should not match');
+  });
+
+  test('matches todo by area overlap', () => {
+    const pendingDir = path.join(tmpDir, '.planning', 'todos', 'pending');
+    fs.mkdirSync(pendingDir, { recursive: true });
+    fs.writeFileSync(path.join(pendingDir, 'auth-todo.md'),
+      'title: Add OAuth token refresh\narea: auth\ncreated: 2026-03-01\n\nOAuth token handling.');
+    fs.writeFileSync(path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n### Phase 01: Auth System\n\n**Goal:** Build auth module\n');
+
+    const result = runGsdTools('todo match-phase 01', tmpDir);
+    const output = JSON.parse(result.output);
+    const authMatch = output.matches.find(m => m.title === 'Add OAuth token refresh');
+    assert.ok(authMatch, 'should find auth todo');
+    const hasAreaReason = authMatch.reasons.some(r => r.startsWith('area:'));
+    assert.ok(hasAreaReason, 'should match on area');
+  });
+
+  test('sorts matches by score descending', () => {
+    const pendingDir = path.join(tmpDir, '.planning', 'todos', 'pending');
+    fs.mkdirSync(pendingDir, { recursive: true });
+    fs.writeFileSync(path.join(pendingDir, 'weak-match.md'),
+      'title: Check token format\narea: general\ncreated: 2026-03-01\n\nToken format validation.');
+    fs.writeFileSync(path.join(pendingDir, 'strong-match.md'),
+      'title: Session management authentication OAuth token handling\narea: auth\ncreated: 2026-03-01\n\nSession auth OAuth tokens.');
+    fs.writeFileSync(path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n### Phase 01: Authentication and Session Management\n\n**Goal:** Implement OAuth login, session handling, and token management\n');
+
+    const result = runGsdTools('todo match-phase 01', tmpDir);
+    const output = JSON.parse(result.output);
+    assert.ok(output.matches.length >= 2, 'should have multiple matches');
+    for (let i = 1; i < output.matches.length; i++) {
+      assert.ok(output.matches[i - 1].score >= output.matches[i].score,
+        `match ${i-1} score (${output.matches[i-1].score}) should be >= match ${i} score (${output.matches[i].score})`);
+    }
   });
 });
 
@@ -1184,5 +1277,210 @@ describe('websearch command', () => {
     const output = JSON.parse(captured);
     assert.strictEqual(output.available, false);
     assert.strictEqual(output.error, 'Network timeout');
+  });
+});
+
+describe('stats command', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+  });
+
+  test('returns valid JSON with empty project', () => {
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.ok(Array.isArray(stats.phases), 'phases should be an array');
+    assert.strictEqual(stats.total_plans, 0);
+    assert.strictEqual(stats.total_summaries, 0);
+    assert.strictEqual(stats.percent, 0);
+    assert.strictEqual(stats.phases_completed, 0);
+    assert.strictEqual(stats.phases_total, 0);
+    assert.strictEqual(stats.requirements_total, 0);
+    assert.strictEqual(stats.requirements_complete, 0);
+  });
+
+  test('counts phases, plans, and summaries correctly', () => {
+    const p1 = path.join(tmpDir, '.planning', 'phases', '01-auth');
+    const p2 = path.join(tmpDir, '.planning', 'phases', '02-api');
+    fs.mkdirSync(p1, { recursive: true });
+    fs.mkdirSync(p2, { recursive: true });
+
+    // Phase 1: 2 plans, 2 summaries (complete)
+    fs.writeFileSync(path.join(p1, '01-01-PLAN.md'), '# Plan');
+    fs.writeFileSync(path.join(p1, '01-02-PLAN.md'), '# Plan');
+    fs.writeFileSync(path.join(p1, '01-01-SUMMARY.md'), '# Summary');
+    fs.writeFileSync(path.join(p1, '01-02-SUMMARY.md'), '# Summary');
+
+    // Phase 2: 1 plan, 0 summaries (planned)
+    fs.writeFileSync(path.join(p2, '02-01-PLAN.md'), '# Plan');
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.phases_total, 2);
+    assert.strictEqual(stats.phases_completed, 1);
+    assert.strictEqual(stats.total_plans, 3);
+    assert.strictEqual(stats.total_summaries, 2);
+    assert.strictEqual(stats.percent, 50);
+    assert.strictEqual(stats.plan_percent, 67);
+  });
+
+  test('counts requirements from REQUIREMENTS.md', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'REQUIREMENTS.md'),
+      `# Requirements
+
+## v1 Requirements
+
+- [x] **AUTH-01**: User can sign up
+- [x] **AUTH-02**: User can log in
+- [ ] **API-01**: REST endpoints
+- [ ] **API-02**: GraphQL support
+`
+    );
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.requirements_total, 4);
+    assert.strictEqual(stats.requirements_complete, 2);
+  });
+
+  test('reads last activity from STATE.md', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'STATE.md'),
+      `# State\n\n**Current Phase:** 01\n**Status:** In progress\n**Last Activity:** 2025-06-15\n**Last Activity Description:** Working\n`
+    );
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.last_activity, '2025-06-15');
+  });
+
+  test('reads last activity from plain STATE.md template format', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'STATE.md'),
+      `# Project State\n\n## Current Position\n\nPhase: 1 of 2 (Foundation)\nPlan: 1 of 1 in current phase\nStatus: In progress\nLast activity: 2025-06-16 — Finished plan 01-01\n`
+    );
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.last_activity, '2025-06-16 — Finished plan 01-01');
+  });
+
+  test('includes roadmap-only phases in totals and preserves hyphenated names', () => {
+    const p1 = path.join(tmpDir, '.planning', 'phases', '14-auth-hardening');
+    const p2 = path.join(tmpDir, '.planning', 'phases', '15-proof-generation');
+    fs.mkdirSync(p1, { recursive: true });
+    fs.mkdirSync(p2, { recursive: true });
+    fs.writeFileSync(path.join(p1, '14-01-PLAN.md'), '# Plan');
+    fs.writeFileSync(path.join(p1, '14-01-SUMMARY.md'), '# Summary');
+    fs.writeFileSync(path.join(p2, '15-01-PLAN.md'), '# Plan');
+    fs.writeFileSync(path.join(p2, '15-01-SUMMARY.md'), '# Summary');
+
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      `# Roadmap
+
+- [x] **Phase 14: Auth Hardening**
+- [x] **Phase 15: Proof Generation**
+- [ ] **Phase 16: Multi-Claim Verification & UX**
+
+## Milestone v1.0 Growth
+
+### Phase 14: Auth Hardening
+**Goal:** Improve auth checks
+
+### Phase 15: Proof Generation
+**Goal:** Improve proof generation
+
+### Phase 16: Multi-Claim Verification & UX
+**Goal:** Support multi-claim verification
+`
+    );
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.phases_total, 3);
+    assert.strictEqual(stats.phases_completed, 2);
+    assert.strictEqual(stats.percent, 67);
+    assert.strictEqual(stats.plan_percent, 100);
+    assert.strictEqual(
+      stats.phases.find(p => p.number === '16')?.name,
+      'Multi-Claim Verification & UX'
+    );
+    assert.strictEqual(
+      stats.phases.find(p => p.number === '16')?.status,
+      'Not Started'
+    );
+  });
+
+  test('reports git commit count and first commit date from repository history', () => {
+    execSync('git init', { cwd: tmpDir, stdio: 'pipe' });
+    execSync('git config user.email "test@example.com"', { cwd: tmpDir, stdio: 'pipe' });
+    execSync('git config user.name "Test User"', { cwd: tmpDir, stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(tmpDir, '.planning', 'PROJECT.md'), '# Project\n');
+    execSync('git add -A', { cwd: tmpDir, stdio: 'pipe' });
+    execSync('git commit -m "initial commit"', {
+      cwd: tmpDir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+      },
+    });
+
+    fs.writeFileSync(path.join(tmpDir, 'README.md'), '# Updated\n');
+    execSync('git add README.md', { cwd: tmpDir, stdio: 'pipe' });
+    execSync('git commit -m "second commit"', {
+      cwd: tmpDir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: '2026-02-01T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-02-01T00:00:00Z',
+      },
+    });
+
+    const result = runGsdTools('stats', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const stats = JSON.parse(result.output);
+    assert.strictEqual(stats.git_commits, 2);
+    assert.strictEqual(stats.git_first_commit_date, '2026-01-01');
+  });
+
+  test('table format renders readable output', () => {
+    const p1 = path.join(tmpDir, '.planning', 'phases', '01-auth');
+    fs.mkdirSync(p1, { recursive: true });
+    fs.writeFileSync(path.join(p1, '01-01-PLAN.md'), '# Plan');
+    fs.writeFileSync(path.join(p1, '01-01-SUMMARY.md'), '# Summary');
+
+    const result = runGsdTools('stats table', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const parsed = JSON.parse(result.output);
+    assert.ok(parsed.rendered, 'table format should include rendered field');
+    assert.ok(parsed.rendered.includes('Statistics'), 'should include Statistics header');
+    assert.ok(parsed.rendered.includes('| Phase |'), 'should include table header');
+    assert.ok(parsed.rendered.includes('| 1 |'), 'should include phase row');
+    assert.ok(parsed.rendered.includes('1/1 phases'), 'should report phase progress');
   });
 });

@@ -4,17 +4,21 @@
 
 const fs = require('fs');
 const path = require('path');
-const { safeReadFile, output, error } = require('./core.cjs');
+const { safeReadFile, normalizeMd, output, error } = require('./core.cjs');
 
 // ─── Parsing engine ───────────────────────────────────────────────────────────
 
 function extractFrontmatter(content) {
   const frontmatter = {};
-  const match = content.match(/^---\n([\s\S]+?)\n---/);
+  // Find ALL frontmatter blocks at the start of the file.
+  // If multiple blocks exist (corruption from CRLF mismatch), use the LAST one
+  // since it represents the most recent state sync.
+  const allBlocks = [...content.matchAll(/(?:^|\n)\s*---\r?\n([\s\S]+?)\r?\n---/g)];
+  const match = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
   if (!match) return frontmatter;
 
   const yaml = match[1];
-  const lines = yaml.split('\n');
+  const lines = yaml.split(/\r?\n/);
 
   // Stack to track nested objects: [{obj, key, indent}]
   // obj = object to write to, key = current key collecting array items, indent = indentation level
@@ -149,7 +153,7 @@ function reconstructFrontmatter(obj) {
 
 function spliceFrontmatter(content, newObj) {
   const yamlStr = reconstructFrontmatter(newObj);
-  const match = content.match(/^---\n[\s\S]+?\n---/);
+  const match = content.match(/^---\r?\n[\s\S]+?\r?\n---/);
   if (match) {
     return `---\n${yamlStr}\n---` + content.slice(match[0].length);
   }
@@ -159,7 +163,7 @@ function spliceFrontmatter(content, newObj) {
 function parseMustHavesBlock(content, blockName) {
   // Extract a specific block from must_haves in raw frontmatter YAML
   // Handles 3-level nesting: must_haves > artifacts/key_links > [{path, provides, ...}]
-  const fmMatch = content.match(/^---\n([\s\S]+?)\n---/);
+  const fmMatch = content.match(/^---\r?\n([\s\S]+?)\r?\n---/);
   if (!fmMatch) return [];
 
   const yaml = fmMatch[1];
@@ -169,7 +173,7 @@ function parseMustHavesBlock(content, blockName) {
   if (blockStart === -1) return [];
 
   const afterBlock = yaml.slice(blockStart);
-  const blockLines = afterBlock.split('\n').slice(1); // skip the header line
+  const blockLines = afterBlock.split(/\r?\n/).slice(1); // skip the header line
 
   const items = [];
   let current = null;
@@ -255,7 +259,7 @@ function cmdFrontmatterSet(cwd, filePath, field, value, raw) {
   try { parsedValue = JSON.parse(value); } catch { parsedValue = value; }
   fm[field] = parsedValue;
   const newContent = spliceFrontmatter(content, fm);
-  fs.writeFileSync(fullPath, newContent, 'utf-8');
+  fs.writeFileSync(fullPath, normalizeMd(newContent), 'utf-8');
   output({ updated: true, field, value: parsedValue }, raw, 'true');
 }
 
@@ -269,7 +273,7 @@ function cmdFrontmatterMerge(cwd, filePath, data, raw) {
   try { mergeData = JSON.parse(data); } catch { error('Invalid JSON for --data'); return; }
   Object.assign(fm, mergeData);
   const newContent = spliceFrontmatter(content, fm);
-  fs.writeFileSync(fullPath, newContent, 'utf-8');
+  fs.writeFileSync(fullPath, normalizeMd(newContent), 'utf-8');
   output({ merged: true, fields: Object.keys(mergeData) }, raw, 'true');
 }
 

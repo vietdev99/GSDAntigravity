@@ -24,6 +24,8 @@ When a milestone completes:
 4. Delete REQUIREMENTS.md (fresh one for next milestone)
 5. Perform full PROJECT.md evolution review
 6. Offer to create next milestone inline
+7. Archive UI artifacts (`*-UI-SPEC.md`, `*-UI-REVIEW.md`) alongside other phase documents
+8. Clean up `.planning/ui-reviews/` screenshot files (binary assets, never archived)
 
 **Context Efficiency:** Archives keep ROADMAP.md constant-size and REQUIREMENTS.md milestone-scoped.
 
@@ -529,6 +531,7 @@ Use `init milestone-op` for context, or load config directly:
 
 ```bash
 INIT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" init execute-phase "1")
+if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
 Extract `branching_strategy`, `phase_branch_template`, `milestone_branch_template`, and `commit_docs` from init JSON.

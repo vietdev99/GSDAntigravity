@@ -14,6 +14,12 @@ Read all files referenced by the invoking prompt's execution_context before star
 
 ## 1. Load Context
 
+Parse `$ARGUMENTS` before doing anything else:
+- `--reset-phase-numbers` flag → opt into restarting roadmap phase numbering at `1`
+- remaining text → use as milestone name if present
+
+If the flag is absent, keep the current behavior of continuing phase numbering from the previous milestone.
+
 - Read PROJECT.md (existing project, validated requirements, decisions)
 - Read MILESTONES.md (what shipped previously)
 - Read STATE.md (pending todos, blockers)
@@ -27,8 +33,9 @@ Read all files referenced by the invoking prompt's execution_context before star
 
 **If no context file:**
 - Present what shipped in last milestone
-- Ask: "What do you want to build next?"
-- Use AskUserQuestion to explore features, priorities, constraints, scope
+- Ask inline (freeform, NOT AskUserQuestion): "What do you want to build next?"
+- Wait for their response, then use AskUserQuestion to probe specifics
+- If user selects "Other" at any point to provide freeform input, ask follow-up as plain text — not another AskUserQuestion
 
 ## 3. Determine Milestone Version
 
@@ -52,6 +59,27 @@ Add/update:
 ```
 
 Update Active requirements section and "Last updated" footer.
+
+Ensure the `## Evolution` section exists in PROJECT.md. If missing (projects created before this feature), add it before the footer:
+
+```markdown
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+```
 
 ## 5. Update STATE.md
 
@@ -78,27 +106,50 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs: start milesto
 
 ```bash
 INIT=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" init new-milestone)
+if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
-Extract from init JSON: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `research_enabled`, `current_milestone`, `project_exists`, `roadmap_exists`.
+Extract from init JSON: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `research_enabled`, `current_milestone`, `project_exists`, `roadmap_exists`, `latest_completed_milestone`, `phase_dir_count`, `phase_archive_path`.
+
+## 7.5 Reset-phase safety (only when `--reset-phase-numbers`)
+
+If `--reset-phase-numbers` is active:
+
+1. Set starting phase number to `1` for the upcoming roadmap.
+2. If `phase_dir_count > 0`, archive the old phase directories before roadmapping so new `01-*` / `02-*` directories cannot collide with stale milestone directories.
+
+If `phase_dir_count > 0` and `phase_archive_path` is available:
+
+```bash
+mkdir -p "${phase_archive_path}"
+find .planning/phases -mindepth 1 -maxdepth 1 -type d -exec mv {} "${phase_archive_path}/" \;
+```
+
+Then verify `.planning/phases/` no longer contains old milestone directories before continuing.
+
+If `phase_dir_count > 0` but `phase_archive_path` is missing:
+- Stop and explain that reset numbering is unsafe without a completed milestone archive target.
+- Tell the user to complete/archive the previous milestone first, then rerun `/gsd:new-milestone --reset-phase-numbers`.
 
 ## 8. Research Decision
 
+Check `research_enabled` from init JSON (loaded from config).
+
+**If `research_enabled` is `true`:**
+
 AskUserQuestion: "Research the domain ecosystem for new features before defining requirements?"
 - "Research first (Recommended)" — Discover patterns, features, architecture for NEW capabilities
-- "Skip research" — Go straight to requirements
+- "Skip research for this milestone" — Go straight to requirements (does not change your default)
 
-**Persist choice to config** (so future `/gsd:plan-phase` honors it):
+**If `research_enabled` is `false`:**
 
-```bash
-# If "Research first": persist true
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" config-set workflow.research true
+AskUserQuestion: "Research the domain ecosystem for new features before defining requirements?"
+- "Skip research (current default)" — Go straight to requirements
+- "Research first" — Discover patterns, features, architecture for NEW capabilities
 
-# If "Skip research": persist false
-node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" config-set workflow.research false
-```
+**IMPORTANT:** Do NOT persist this choice to config.json. The `workflow.research` setting is a persistent user preference that controls plan-phase behavior across the project. Changing it here would silently alter future `/gsd:plan-phase` behavior. To change the default, use `/gsd:settings`.
 
-**If "Research first":**
+**If user chose "Research first":**
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -266,7 +317,9 @@ node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" commit "docs: define milest
 ◆ Spawning roadmapper...
 ```
 
-**Starting phase number:** Read MILESTONES.md for last phase number. Continue from there (v1.0 ended at phase 5 → v1.1 starts at phase 6).
+**Starting phase number:**
+- If `--reset-phase-numbers` is active, start at **Phase 1**
+- Otherwise, continue from the previous milestone's last phase number (v1.0 ended at phase 5 → v1.1 starts at phase 6)
 
 ```
 Task(prompt="
@@ -282,7 +335,9 @@ Task(prompt="
 
 <instructions>
 Create roadmap for milestone v[X.Y]:
-1. Start phase numbering from [N]
+1. Respect the selected numbering mode:
+   - `--reset-phase-numbers` → start at Phase 1
+   - default behavior → continue from the previous milestone's last phase number
 2. Derive phases from THIS MILESTONE's requirements only
 3. Map every requirement to exactly one phase
 4. Derive 2-5 success criteria per phase (observable user behaviors)
@@ -374,7 +429,7 @@ Also: `/gsd:plan-phase [N]` — skip discussion, plan directly
 - [ ] gsd-roadmapper spawned with phase numbering context
 - [ ] Roadmap files written immediately (not draft)
 - [ ] User feedback incorporated (if any)
-- [ ] ROADMAP.md phases continue from previous milestone
+- [ ] Phase numbering mode respected (continued or reset)
 - [ ] All commits made (if planning docs committed)
 - [ ] User knows next step: `/gsd:discuss-phase [N]`
 

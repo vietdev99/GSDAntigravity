@@ -2,12 +2,16 @@
 
 # GET SHIT DONE
 
-**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, Codex, Antigravity IDE, and Kiro IDE.**
+**English** · [简体中文](README.zh-CN.md)
+
+**A light-weight and powerful meta-prompting, context engineering and spec-driven development system for Claude Code, OpenCode, Gemini CLI, Codex, Copilot, and Antigravity.**
 
 **Solves context rot — the quality degradation that happens as Claude fills its context window.**
 
-[![npm version](https://img.shields.io/npm/v/gsd-ide?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/gsd-ide)
-[![npm downloads](https://img.shields.io/npm/dm/gsd-ide?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/gsd-ide)
+[**English**](README.md) | [**简体中文**](docs/zh-CN/README.md)
+
+[![npm version](https://img.shields.io/npm/v/get-shit-done-cc?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/get-shit-done-cc)
+[![npm downloads](https://img.shields.io/npm/dm/get-shit-done-cc?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/get-shit-done-cc)
 [![Tests](https://img.shields.io/github/actions/workflow/status/glittercowboy/get-shit-done/test.yml?branch=main&style=for-the-badge&logo=github&label=Tests)](https://github.com/glittercowboy/get-shit-done/actions/workflows/test.yml)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/gsd)
 [![X (Twitter)](https://img.shields.io/badge/X-@gsd__foundation-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/gsd_foundation)
@@ -18,7 +22,7 @@
 <br>
 
 ```bash
-npx github:vietdev99/GSDAntigravity@latest
+npx get-shit-done-cc@latest
 ```
 
 **Works on Mac, Windows, and Linux.**
@@ -76,17 +80,19 @@ People who want to describe what they want and have it built correctly — witho
 ## Getting Started
 
 ```bash
-npx github:vietdev99/GSDAntigravity@latest
+npx get-shit-done-cc@latest
 ```
 
 The installer prompts you to choose:
-1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Antigravity, Kiro, or all
+1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Copilot, Antigravity, or all
 2. **Location** — Global (all projects) or local (current project only)
 
 Verify with:
-- Claude Code / Gemini / Antigravity / Kiro: `/gsd:help`
+- Claude Code / Gemini: `/gsd:help`
 - OpenCode: `/gsd-help`
 - Codex: `$gsd-help`
+- Copilot: `/gsd:help`
+- Antigravity: `/gsd:help`
 
 > [!NOTE]
 > Codex installation uses skills (`skills/gsd-*/SKILL.md`) rather than custom prompts.
@@ -96,7 +102,7 @@ Verify with:
 GSD evolves fast. Update periodically:
 
 ```bash
-npx github:vietdev99/GSDAntigravity@latest
+npx get-shit-done-cc@latest
 ```
 
 <details>
@@ -104,33 +110,33 @@ npx github:vietdev99/GSDAntigravity@latest
 
 ```bash
 # Claude Code
-npx github:vietdev99/GSDAntigravity --claude --global   # Install to ~/.claude/
-npx github:vietdev99/GSDAntigravity --claude --local    # Install to ./.claude/
+npx get-shit-done-cc --claude --global   # Install to ~/.claude/
+npx get-shit-done-cc --claude --local    # Install to ./.claude/
 
 # OpenCode (open source, free models)
-npx github:vietdev99/GSDAntigravity --opencode --global # Install to ~/.config/opencode/
+npx get-shit-done-cc --opencode --global # Install to ~/.config/opencode/
 
 # Gemini CLI
-npx github:vietdev99/GSDAntigravity --gemini --global   # Install to ~/.gemini/
+npx get-shit-done-cc --gemini --global   # Install to ~/.gemini/
 
 # Codex (skills-first)
-npx github:vietdev99/GSDAntigravity --codex --global    # Install to ~/.codex/
-npx github:vietdev99/GSDAntigravity --codex --local     # Install to ./.codex/
+npx get-shit-done-cc --codex --global    # Install to ~/.codex/
+npx get-shit-done-cc --codex --local     # Install to ./.codex/
 
-# Antigravity IDE
-npx github:vietdev99/GSDAntigravity --antigravity --global  # Install to ~/.gemini/antigravity/
-npx github:vietdev99/GSDAntigravity --antigravity --local   # Install to ./.antigravity/
+# Copilot (GitHub Copilot CLI)
+npx get-shit-done-cc --copilot --global  # Install to ~/.github/
+npx get-shit-done-cc --copilot --local   # Install to ./.github/
 
-# Kiro IDE
-npx github:vietdev99/GSDAntigravity --kiro --global          # Install to ~/.kiro/
-npx github:vietdev99/GSDAntigravity --kiro --local           # Install to ./.kiro/
+# Antigravity (Google, skills-first, Gemini-based)
+npx get-shit-done-cc --antigravity --global # Install to ~/.gemini/antigravity/
+npx get-shit-done-cc --antigravity --local  # Install to ./.agent/
 
 # All runtimes
-npx github:vietdev99/GSDAntigravity --all --global      # Install to all directories
+npx get-shit-done-cc --all --global      # Install to all directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
-Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--antigravity`, `--kiro`, or `--all` to skip the runtime prompt.
+Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--copilot`, `--antigravity`, or `--all` to skip the runtime prompt.
 
 </details>
 
@@ -189,79 +195,6 @@ If you prefer not to use that flag, add this to your project's `.claude/settings
     ]
   }
 }
-```
-
-</details>
-
----
-
-### Using with Antigravity IDE
-
-<details>
-<summary><strong>Antigravity-specific setup and usage</strong></summary>
-
-#### Installation
-
-```bash
-# Global install (recommended)
-npx github:vietdev99/GSDAntigravity --antigravity --global
-
-# Or from local clone
-node bin/install.js --antigravity --global
-```
-
-This installs to `~/.gemini/antigravity/` with:
-- `commands/gsd/` — All GSD commands (`.md` format)
-- `agents/` — 11 specialized agents with Antigravity tool names
-- `get-shit-done/` — Core runtime (workflows, templates, references)
-- `hooks/` — Statusline, update check, context monitor
-- `settings.json` — Config with `experimental.enableAgents: true`
-
-#### Tool Mapping
-
-GSD was originally built for Claude Code. In Antigravity, tool names are automatically converted:
-
-| Claude Code | Antigravity | Description |
-|-------------|-------------|-------------|
-| `Read` | `view_file` | Read file contents |
-| `Write` | `write_to_file` | Create/overwrite files |
-| `Edit` | `replace_file_content` | Edit existing files |
-| `Bash` | `run_command` | Execute shell commands |
-| `Task` | `run_command` | Spawn subagents via terminal |
-| `AskUserQuestion` | `notify_user` | Interactive user prompts |
-| `Glob` | `find_by_name` | Find files by pattern |
-| `Grep` | `grep_search` | Search file contents |
-
-#### How It Works
-
-Each GSD command includes an `<antigravity_adapter>` header that instructs the AI how to translate Claude Code patterns to Antigravity equivalents. This means:
-
-- **`Task()` subagent spawning** → Uses `run_command` to spawn agents via terminal
-- **`AskUserQuestion`** → Uses `notify_user` with `BlockedOnUser: true`
-- **All path references** → Automatically rewritten to `~/.gemini/antigravity/`
-
-#### Commands
-
-Same commands as Claude Code / Gemini — use the `/gsd:` prefix:
-
-```
-/gsd:new-project          # Initialize a new project
-/gsd:plan-phase 1         # Plan phase 1
-/gsd:execute-phase 1      # Execute phase 1
-/gsd:progress             # View overall progress
-/gsd:help                 # Show all commands
-```
-
-#### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ANTIGRAVITY_CONFIG_DIR` | `~/.gemini/antigravity` | Override global config directory |
-
-#### Uninstall
-
-```bash
-npx github:vietdev99/GSDAntigravity --antigravity --global --uninstall
 ```
 
 </details>
@@ -357,24 +290,24 @@ Walk away, come back to completed work with clean git history.
 Plans are grouped into "waves" based on dependencies. Within each wave, plans run in parallel. Waves run sequentially.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  PHASE EXECUTION                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  WAVE 1 (parallel)          WAVE 2 (parallel)          WAVE 3       │
+┌────────────────────────────────────────────────────────────────────┐
+│  PHASE EXECUTION                                                   │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  WAVE 1 (parallel)          WAVE 2 (parallel)          WAVE 3      │
 │  ┌─────────┐ ┌─────────┐    ┌─────────┐ ┌─────────┐    ┌─────────┐ │
 │  │ Plan 01 │ │ Plan 02 │ →  │ Plan 03 │ │ Plan 04 │ →  │ Plan 05 │ │
 │  │         │ │         │    │         │ │         │    │         │ │
 │  │ User    │ │ Product │    │ Orders  │ │ Cart    │    │ Checkout│ │
 │  │ Model   │ │ Model   │    │ API     │ │ API     │    │ UI      │ │
 │  └─────────┘ └─────────┘    └─────────┘ └─────────┘    └─────────┘ │
-│       │           │              ↑           ↑              ↑       │
-│       └───────────┴──────────────┴───────────┘              │       │
-│              Dependencies: Plan 03 needs Plan 01            │       │
-│                          Plan 04 needs Plan 02              │       │
-│                          Plan 05 needs Plans 03 + 04        │       │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+│       │           │              ↑           ↑              ↑      │
+│       └───────────┴──────────────┴───────────┘              │      │
+│              Dependencies: Plan 03 needs Plan 01            │      │
+│                          Plan 04 needs Plan 02              │      │
+│                          Plan 05 needs Plans 03 + 04        │      │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Why waves matter:**
@@ -411,19 +344,28 @@ If everything passes, you move on. If something's broken, you don't manually deb
 
 ---
 
-### 6. Repeat → Complete → Next Milestone
+### 6. Repeat → Ship → Complete → Next Milestone
 
 ```
 /gsd:discuss-phase 2
 /gsd:plan-phase 2
 /gsd:execute-phase 2
 /gsd:verify-work 2
+/gsd:ship 2                  # Create PR from verified work
 ...
 /gsd:complete-milestone
 /gsd:new-milestone
 ```
 
-Loop **discuss → plan → execute → verify** until milestone complete.
+Or let GSD figure out the next step automatically:
+
+```
+/gsd:next                    # Auto-detect and run next step
+```
+
+Loop **discuss → plan → execute → verify → ship** until milestone complete.
+
+If you want faster intake during discussion, use `/gsd:discuss-phase <n> --batch` to answer a small grouped set of questions at once instead of one-by-one.
 
 Each phase gets your input (discuss), proper research (plan), clean execution (execute), and human verification (verify). Context stays fresh. Quality stays high.
 
@@ -444,10 +386,16 @@ Then `/gsd:new-milestone` starts the next version — same flow as `new-project`
 Quick mode gives you GSD guarantees (atomic commits, state tracking) with a faster path:
 
 - **Same agents** — Planner + executor, same quality
-- **Skips optional steps** — No research, no plan checker, no verifier
+- **Skips optional steps** — No research, no plan checker, no verifier by default
 - **Separate tracking** — Lives in `.planning/quick/`, not phases
 
-Use for: bug fixes, small features, config changes, one-off tasks.
+**`--discuss` flag:** Lightweight discussion to surface gray areas before planning.
+
+**`--research` flag:** Spawns a focused researcher before planning. Investigates implementation approaches, library options, and pitfalls. Use when you're unsure how to approach a task.
+
+**`--full` flag:** Enables plan-checking (max 2 iterations) and post-execution verification.
+
+Flags are composable: `--discuss --research --full` gives discussion + research + plan-checking + verification.
 
 ```
 /gsd:quick
@@ -552,15 +500,25 @@ You're never locked in. The system adapts.
 | `/gsd:plan-phase [N] [--auto]` | Research + plan + verify for a phase |
 | `/gsd:execute-phase <N>` | Execute all plans in parallel waves, verify when complete |
 | `/gsd:verify-work [N]` | Manual user acceptance testing ¹ |
+| `/gsd:ship [N] [--draft]` | Create PR from verified phase work with auto-generated body |
+| `/gsd:next` | Automatically advance to the next logical workflow step |
 | `/gsd:audit-milestone` | Verify milestone achieved its definition of done |
 | `/gsd:complete-milestone` | Archive milestone, tag release |
 | `/gsd:new-milestone [name]` | Start next version: questions → research → requirements → roadmap |
+
+### UI Design
+
+| Command | What it does |
+|---------|--------------|
+| `/gsd:ui-phase [N]` | Generate UI design contract (UI-SPEC.md) for frontend phases |
+| `/gsd:ui-review [N]` | Retroactive 6-pillar visual audit of implemented frontend code |
 
 ### Navigation
 
 | Command | What it does |
 |---------|--------------|
 | `/gsd:progress` | Where am I? What's next? |
+| `/gsd:next` | Auto-detect state and run the next step |
 | `/gsd:help` | Show all commands and usage guide |
 | `/gsd:update` | Update GSD with changelog preview |
 | `/gsd:join-discord` | Join the GSD Discord community |
@@ -569,7 +527,7 @@ You're never locked in. The system adapts.
 
 | Command | What it does |
 |---------|--------------|
-| `/gsd:map-codebase` | Analyze existing codebase before new-project |
+| `/gsd:map-codebase [area]` | Analyze existing codebase before new-project |
 
 ### Phase Management
 
@@ -585,20 +543,25 @@ You're never locked in. The system adapts.
 
 | Command | What it does |
 |---------|--------------|
-| `/gsd:pause-work` | Create handoff when stopping mid-phase |
+| `/gsd:pause-work` | Create handoff when stopping mid-phase (writes HANDOFF.json) |
 | `/gsd:resume-work` | Restore from last session |
+| `/gsd:session-report` | Generate session summary with work performed and outcomes |
 
 ### Utilities
 
 | Command | What it does |
 |---------|--------------|
 | `/gsd:settings` | Configure model profile and workflow agents |
-| `/gsd:set-profile <profile>` | Switch model profile (quality/balanced/budget) |
+| `/gsd:set-profile <profile>` | Switch model profile (quality/balanced/budget/inherit) |
 | `/gsd:add-todo [desc]` | Capture idea for later |
 | `/gsd:check-todos` | List pending todos |
 | `/gsd:debug [desc]` | Systematic debugging with persistent state |
-| `/gsd:quick [--full]` | Execute ad-hoc task with GSD guarantees (`--full` adds plan-checking and verification) |
+| `/gsd:do <text>` | Route freeform text to the right GSD command automatically |
+| `/gsd:note <text>` | Zero-friction idea capture — append, list, or promote notes to todos |
+| `/gsd:quick [--full] [--discuss] [--research]` | Execute ad-hoc task with GSD guarantees (`--full` adds plan-checking and verification, `--discuss` gathers context first, `--research` investigates approaches before planning) |
 | `/gsd:health [--repair]` | Validate `.planning/` directory integrity, auto-repair with `--repair` |
+| `/gsd:stats` | Display project statistics — phases, plans, requirements, git metrics |
+| `/gsd:profile-user [--questionnaire] [--refresh]` | Generate developer behavioral profile from session analysis for personalized responses |
 
 <sup>¹ Contributed by reddit user OracleGreyBeard</sup>
 
@@ -613,7 +576,7 @@ GSD stores project settings in `.planning/config.json`. Configure during `/gsd:n
 | Setting | Options | Default | What it controls |
 |---------|---------|---------|------------------|
 | `mode` | `yolo`, `interactive` | `interactive` | Auto-approve vs confirm at each step |
-| `depth` | `quick`, `standard`, `comprehensive` | `standard` | Planning thoroughness (phases × plans) |
+| `granularity` | `coarse`, `standard`, `fine` | `standard` | Phase granularity — how finely scope is sliced (phases × plans) |
 
 ### Model Profiles
 
@@ -624,11 +587,14 @@ Control which Claude model each agent uses. Balance quality vs token spend.
 | `quality` | Opus | Opus | Sonnet |
 | `balanced` (default) | Opus | Sonnet | Sonnet |
 | `budget` | Sonnet | Sonnet | Haiku |
+| `inherit` | Inherit | Inherit | Inherit |
 
 Switch profiles:
 ```
 /gsd:set-profile budget
 ```
+
+Use `inherit` when using non-Anthropic providers (OpenRouter, local models) or to follow the current runtime model selection (e.g. OpenCode `/model`).
 
 Or configure via `/gsd:settings`.
 
@@ -653,6 +619,7 @@ Use `/gsd:settings` to toggle these, or override per-invocation:
 |---------|---------|------------------|
 | `parallelization.enabled` | `true` | Run independent plans simultaneously |
 | `planning.commit_docs` | `true` | Track `.planning/` in git |
+| `hooks.context_warnings` | `true` | Show context window usage warnings |
 
 ### Git Branching
 
@@ -713,18 +680,18 @@ This prevents Claude from reading these files entirely, regardless of what comma
 
 **Commands not working as expected?**
 - Run `/gsd:help` to verify installation
-- Re-run `npx github:vietdev99/GSDAntigravity` to reinstall
+- Re-run `npx get-shit-done-cc` to reinstall
 
 **Updating to the latest version?**
 ```bash
-npx github:vietdev99/GSDAntigravity@latest
+npx get-shit-done-cc@latest
 ```
 
 **Using Docker or containerized environments?**
 
 If file reads fail with tilde paths (`~/.claude/...`), set `CLAUDE_CONFIG_DIR` before installing:
 ```bash
-CLAUDE_CONFIG_DIR=/home/youruser/.claude npx github:vietdev99/GSDAntigravity --global
+CLAUDE_CONFIG_DIR=/home/youruser/.claude npx get-shit-done-cc --global
 ```
 This ensures absolute paths are used instead of `~` which may not expand correctly in containers.
 
@@ -734,14 +701,19 @@ To remove GSD completely:
 
 ```bash
 # Global installs
-npx github:vietdev99/GSDAntigravity --claude --global --uninstall
-npx github:vietdev99/GSDAntigravity --opencode --global --uninstall
-npx github:vietdev99/GSDAntigravity --codex --global --uninstall
+npx get-shit-done-cc --claude --global --uninstall
+npx get-shit-done-cc --opencode --global --uninstall
+npx get-shit-done-cc --gemini --global --uninstall
+npx get-shit-done-cc --codex --global --uninstall
+npx get-shit-done-cc --copilot --global --uninstall
+npx get-shit-done-cc --antigravity --global --uninstall
 
 # Local installs (current project)
-npx github:vietdev99/GSDAntigravity --claude --local --uninstall
-npx github:vietdev99/GSDAntigravity --opencode --local --uninstall
-npx github:vietdev99/GSDAntigravity --codex --local --uninstall
+npx get-shit-done-cc --claude --local --uninstall
+npx get-shit-done-cc --opencode --local --uninstall
+npx get-shit-done-cc --codex --local --uninstall
+npx get-shit-done-cc --copilot --local --uninstall
+npx get-shit-done-cc --antigravity --local --uninstall
 ```
 
 This removes all GSD commands, agents, hooks, and settings while preserving your other configurations.
@@ -750,7 +722,7 @@ This removes all GSD commands, agents, hooks, and settings while preserving your
 
 ## Community Ports
 
-OpenCode, Gemini CLI, and Codex are now natively supported via `npx github:vietdev99/GSDAntigravity`.
+OpenCode, Gemini CLI, and Codex are now natively supported via `npx get-shit-done-cc`.
 
 These community ports pioneered multi-runtime support:
 

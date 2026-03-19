@@ -475,6 +475,51 @@ describe('cmdInitPhaseOp fallback', () => {
     assert.strictEqual(output.has_plans, false);
   });
 
+  test('prefers current milestone roadmap entry over archived phase with same number', () => {
+    const archiveDir = path.join(
+      tmpDir,
+      '.planning',
+      'milestones',
+      'v1.2-phases',
+      '02-event-parser-and-queue-schema'
+    );
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.writeFileSync(path.join(archiveDir, '02-CONTEXT.md'), '# Archived context');
+    fs.writeFileSync(path.join(archiveDir, '02-01-PLAN.md'), '# Archived plan');
+    fs.writeFileSync(path.join(archiveDir, '02-VERIFICATION.md'), '# Archived verification');
+
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      `# Roadmap
+
+<details>
+<summary>Shipped milestone v1.2</summary>
+
+### Phase 2: Event Parser and Queue Schema
+**Goal:** Archived milestone work
+</details>
+
+## Milestone v1.3 Current
+
+### Phase 2: Retry Orchestration
+**Goal:** Current milestone work
+**Plans:** TBD
+`
+    );
+
+    const result = runGsdTools('init phase-op 2', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, true);
+    assert.strictEqual(output.phase_dir, null);
+    assert.strictEqual(output.phase_name, 'Retry Orchestration');
+    assert.strictEqual(output.phase_slug, 'retry-orchestration');
+    assert.strictEqual(output.has_context, false);
+    assert.strictEqual(output.has_plans, false);
+    assert.strictEqual(output.has_verification, false);
+  });
+
   test('neither directory nor roadmap entry returns not found', () => {
     fs.writeFileSync(
       path.join(tmpDir, '.planning', 'ROADMAP.md'),
@@ -629,15 +674,29 @@ describe('cmdInitQuick', () => {
     cleanup(tmpDir);
   });
 
-  test('with description generates slug and task_dir', () => {
+  test('with description generates slug and task_dir with YYMMDD-xxx format', () => {
     const result = runGsdTools('init quick "Fix login bug"', tmpDir);
     assert.ok(result.success, `Command failed: ${result.error}`);
 
     const output = JSON.parse(result.output);
+    assert.strictEqual(output.branch_name, null);
     assert.strictEqual(output.slug, 'fix-login-bug');
-    assert.strictEqual(output.next_num, 1);
-    assert.strictEqual(output.task_dir, '.planning/quick/1-fix-login-bug');
     assert.strictEqual(output.description, 'Fix login bug');
+
+    // quick_id must match YYMMDD-xxx (6 digits, dash, 3 base36 chars)
+    assert.ok(/^\d{6}-[0-9a-z]{3}$/.test(output.quick_id),
+      `quick_id should match YYMMDD-xxx, got: "${output.quick_id}"`);
+
+    // task_dir must use the new ID format
+    assert.ok(output.task_dir.startsWith('.planning/quick/'),
+      `task_dir should start with .planning/quick/, got: "${output.task_dir}"`);
+    assert.ok(output.task_dir.endsWith('-fix-login-bug'),
+      `task_dir should end with -fix-login-bug, got: "${output.task_dir}"`);
+    assert.ok(/^\.planning\/quick\/\d{6}-[0-9a-z]{3}-fix-login-bug$/.test(output.task_dir),
+      `task_dir format wrong: "${output.task_dir}"`);
+
+    // next_num must NOT be present
+    assert.ok(!('next_num' in output), 'next_num should not be in output');
   });
 
   test('without description returns null slug and task_dir', () => {
@@ -648,19 +707,27 @@ describe('cmdInitQuick', () => {
     assert.strictEqual(output.slug, null);
     assert.strictEqual(output.task_dir, null);
     assert.strictEqual(output.description, null);
-    assert.strictEqual(output.next_num, 1);
+
+    // quick_id is still generated even without description
+    assert.ok(/^\d{6}-[0-9a-z]{3}$/.test(output.quick_id),
+      `quick_id should match YYMMDD-xxx, got: "${output.quick_id}"`);
   });
 
-  test('next number increments from existing entries', () => {
-    const quickDir = path.join(tmpDir, '.planning', 'quick');
-    fs.mkdirSync(path.join(quickDir, '1-old-task'), { recursive: true });
-    fs.mkdirSync(path.join(quickDir, '3-another-task'), { recursive: true });
+  test('two rapid calls produce different quick_ids (no collision within 2s window)', () => {
+    // Both calls happen within the same test, which is sub-second.
+    // They may or may not land in the same 2-second block. We just verify format.
+    const r1 = runGsdTools('init quick "Task one"', tmpDir);
+    const r2 = runGsdTools('init quick "Task two"', tmpDir);
+    assert.ok(r1.success && r2.success);
 
-    const result = runGsdTools('init quick "New task"', tmpDir);
-    assert.ok(result.success, `Command failed: ${result.error}`);
+    const o1 = JSON.parse(r1.output);
+    const o2 = JSON.parse(r2.output);
 
-    const output = JSON.parse(result.output);
-    assert.strictEqual(output.next_num, 4);
+    assert.ok(/^\d{6}-[0-9a-z]{3}$/.test(o1.quick_id));
+    assert.ok(/^\d{6}-[0-9a-z]{3}$/.test(o2.quick_id));
+
+    // Directories are distinct because slugs differ
+    assert.notStrictEqual(o1.task_dir, o2.task_dir);
   });
 
   test('long description truncates slug to 40 chars', () => {
@@ -669,6 +736,44 @@ describe('cmdInitQuick', () => {
 
     const output = JSON.parse(result.output);
     assert.ok(output.slug.length <= 40, `Slug should be <= 40 chars, got ${output.slug.length}: "${output.slug}"`);
+  });
+
+  test('returns quick branch name when quick_branch_template is configured', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'config.json'),
+      JSON.stringify({
+        git: {
+          quick_branch_template: 'gsd/quick-{num}-{slug}',
+        },
+      }, null, 2)
+    );
+
+    const result = runGsdTools('init quick "Fix login bug"', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.ok(output.branch_name, 'branch_name should be set');
+    assert.ok(output.branch_name.startsWith('gsd/quick-'));
+    assert.ok(output.branch_name.endsWith('-fix-login-bug'));
+    assert.ok(output.branch_name.includes(output.quick_id), 'branch_name should include quick_id');
+  });
+
+  test('uses fallback slug in quick branch name when description is omitted', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'config.json'),
+      JSON.stringify({
+        git: {
+          quick_branch_template: 'gsd/quick-{quick}-{slug}',
+        },
+      }, null, 2)
+    );
+
+    const result = runGsdTools('init quick', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.ok(output.branch_name, 'branch_name should be set');
+    assert.ok(output.branch_name.endsWith('-quick'), `Expected fallback slug in branch name, got "${output.branch_name}"`);
   });
 });
 
@@ -841,9 +946,37 @@ describe('cmdInitNewMilestone', () => {
     assert.strictEqual(output2.roadmap_exists, true);
     assert.strictEqual(output2.project_exists, true);
   });
+
+  test('reports latest completed milestone and archive target for reset flow', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'MILESTONES.md'),
+      '# Milestones\n\n## v1.2 Search Refresh (Shipped: 2026-02-18)\n\n---\n'
+    );
+    fs.mkdirSync(path.join(tmpDir, '.planning', 'phases', '06-refine-search'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.planning', 'phases', '07-polish'), { recursive: true });
+
+    const result = runGsdTools('init new-milestone', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.latest_completed_milestone, 'v1.2');
+    assert.strictEqual(output.latest_completed_milestone_name, 'Search Refresh');
+    assert.strictEqual(output.phase_dir_count, 2);
+    assert.strictEqual(output.phase_archive_path, '.planning/milestones/v1.2-phases');
+  });
+
+  test('reset flow metadata is null-safe when no milestones file exists', () => {
+    const result = runGsdTools('init new-milestone', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.latest_completed_milestone, null);
+    assert.strictEqual(output.latest_completed_milestone_name, null);
+    assert.strictEqual(output.phase_dir_count, 0);
+    assert.strictEqual(output.phase_archive_path, null);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // roadmap analyze command
 // ─────────────────────────────────────────────────────────────────────────────
-

@@ -32,3 +32,11 @@ philosophy.md
 .antigravity/
 .kiro/
 .agents/
+
+# Installed skills
+.github/agents/gsd-*
+.github/skills/gsd-*
+.github/get-shit-done/*
+.github/skills/get-shit-done
+.github/copilot-instructions.md
+.bg-shell/
