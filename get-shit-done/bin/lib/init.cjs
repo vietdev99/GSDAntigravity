@@ -24,16 +24,45 @@ function getLatestCompletedMilestone(cwd) {
   }
 }
 
+/**
+ * Inject `project_root` into an init result object.
+ * Workflows use this to prefix `.planning/` paths correctly when Claude's CWD
+ * differs from the project root (e.g., inside a sub-repo).
+ */
+function withProjectRoot(cwd, result) {
+  result.project_root = cwd;
+  return result;
+}
+
 function cmdInitExecutePhase(cwd, phase, raw) {
   if (!phase) {
     error('phase required for init execute-phase');
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  let phaseInfo = findPhaseInternal(cwd, phase);
   const milestone = getMilestoneInfo(cwd);
 
   const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+
+  // Fallback to ROADMAP.md if no phase directory exists yet
+  if (!phaseInfo && roadmapPhase?.found) {
+    const phaseName = roadmapPhase.phase_name;
+    phaseInfo = {
+      found: true,
+      directory: null,
+      phase_number: roadmapPhase.phase_number,
+      phase_name: phaseName,
+      phase_slug: phaseName ? phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : null,
+      plans: [],
+      summaries: [],
+      incomplete_plans: [],
+      has_research: false,
+      has_context: false,
+      has_verification: false,
+      has_reviews: false,
+    };
+  }
   const reqMatch = roadmapPhase?.section?.match(/^\*\*Requirements\*\*:[^\S\n]*([^\n]*)$/m);
   const reqExtracted = reqMatch
     ? reqMatch[1].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).join(', ')
@@ -47,6 +76,7 @@ function cmdInitExecutePhase(cwd, phase, raw) {
 
     // Config flags
     commit_docs: config.commit_docs,
+    sub_repos: config.sub_repos,
     parallelization: config.parallelization,
     context_window: config.context_window,
     branching_strategy: config.branching_strategy,
@@ -95,7 +125,7 @@ function cmdInitExecutePhase(cwd, phase, raw) {
     config_path: '.planning/config.json',
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitPlanPhase(cwd, phase, raw) {
@@ -104,9 +134,28 @@ function cmdInitPlanPhase(cwd, phase, raw) {
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  let phaseInfo = findPhaseInternal(cwd, phase);
 
   const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+
+  // Fallback to ROADMAP.md if no phase directory exists yet
+  if (!phaseInfo && roadmapPhase?.found) {
+    const phaseName = roadmapPhase.phase_name;
+    phaseInfo = {
+      found: true,
+      directory: null,
+      phase_number: roadmapPhase.phase_number,
+      phase_name: phaseName,
+      phase_slug: phaseName ? phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : null,
+      plans: [],
+      summaries: [],
+      incomplete_plans: [],
+      has_research: false,
+      has_context: false,
+      has_verification: false,
+      has_reviews: false,
+    };
+  }
   const reqMatch = roadmapPhase?.section?.match(/^\*\*Requirements\*\*:[^\S\n]*([^\n]*)$/m);
   const reqExtracted = reqMatch
     ? reqMatch[1].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).join(', ')
@@ -137,6 +186,7 @@ function cmdInitPlanPhase(cwd, phase, raw) {
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
     has_context: phaseInfo?.has_context || false,
+    has_reviews: phaseInfo?.has_reviews || false,
     has_plans: (phaseInfo?.plans?.length || 0) > 0,
     plan_count: phaseInfo?.plans?.length || 0,
 
@@ -171,10 +221,14 @@ function cmdInitPlanPhase(cwd, phase, raw) {
       if (uatFile) {
         result.uat_path = toPosixPath(path.join(phaseInfo.directory, uatFile));
       }
+      const reviewsFile = files.find(f => f.endsWith('-REVIEWS.md') || f === 'REVIEWS.md');
+      if (reviewsFile) {
+        result.reviews_path = toPosixPath(path.join(phaseInfo.directory, reviewsFile));
+      }
     } catch { /* intentionally empty */ }
   }
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitNewProject(cwd, raw) {
@@ -184,6 +238,14 @@ function cmdInitNewProject(cwd, raw) {
   const homedir = require('os').homedir();
   const braveKeyFile = path.join(homedir, '.gsd', 'brave_api_key');
   const hasBraveSearch = !!(process.env.BRAVE_API_KEY || fs.existsSync(braveKeyFile));
+
+  // Detect Firecrawl API key availability
+  const firecrawlKeyFile = path.join(homedir, '.gsd', 'firecrawl_api_key');
+  const hasFirecrawl = !!(process.env.FIRECRAWL_API_KEY || fs.existsSync(firecrawlKeyFile));
+
+  // Detect Exa API key availability
+  const exaKeyFile = path.join(homedir, '.gsd', 'exa_api_key');
+  const hasExaSearch = !!(process.env.EXA_API_KEY || fs.existsSync(exaKeyFile));
 
   // Detect existing code (cross-platform — no Unix `find` dependency)
   let hasCode = false;
@@ -237,12 +299,14 @@ function cmdInitNewProject(cwd, raw) {
 
     // Enhanced search
     brave_search_available: hasBraveSearch,
+    firecrawl_available: hasFirecrawl,
+    exa_search_available: hasExaSearch,
 
     // File paths
     project_path: '.planning/PROJECT.md',
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitNewMilestone(cwd, raw) {
@@ -289,7 +353,7 @@ function cmdInitNewMilestone(cwd, raw) {
     state_path: '.planning/STATE.md',
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitQuick(cwd, description, raw) {
@@ -347,7 +411,7 @@ function cmdInitQuick(cwd, description, raw) {
 
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitResume(cwd, raw) {
@@ -379,7 +443,7 @@ function cmdInitResume(cwd, raw) {
     commit_docs: config.commit_docs,
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitVerifyWork(cwd, phase, raw) {
@@ -388,7 +452,28 @@ function cmdInitVerifyWork(cwd, phase, raw) {
   }
 
   const config = loadConfig(cwd);
-  const phaseInfo = findPhaseInternal(cwd, phase);
+  let phaseInfo = findPhaseInternal(cwd, phase);
+
+  // Fallback to ROADMAP.md if no phase directory exists yet
+  if (!phaseInfo) {
+    const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+    if (roadmapPhase?.found) {
+      const phaseName = roadmapPhase.phase_name;
+      phaseInfo = {
+        found: true,
+        directory: null,
+        phase_number: roadmapPhase.phase_number,
+        phase_name: phaseName,
+        phase_slug: phaseName ? phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : null,
+        plans: [],
+        summaries: [],
+        incomplete_plans: [],
+        has_research: false,
+        has_context: false,
+        has_verification: false,
+      };
+    }
+  }
 
   const result = {
     // Models
@@ -408,7 +493,7 @@ function cmdInitVerifyWork(cwd, phase, raw) {
     has_verification: phaseInfo?.has_verification || false,
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitPhaseOp(cwd, phase, raw) {
@@ -463,6 +548,8 @@ function cmdInitPhaseOp(cwd, phase, raw) {
     // Config
     commit_docs: config.commit_docs,
     brave_search: config.brave_search,
+    firecrawl: config.firecrawl,
+    exa_search: config.exa_search,
 
     // Phase info
     phase_found: !!phaseInfo,
@@ -477,6 +564,7 @@ function cmdInitPhaseOp(cwd, phase, raw) {
     has_context: phaseInfo?.has_context || false,
     has_plans: (phaseInfo?.plans?.length || 0) > 0,
     has_verification: phaseInfo?.has_verification || false,
+    has_reviews: phaseInfo?.has_reviews || false,
     plan_count: phaseInfo?.plans?.length || 0,
 
     // File existence
@@ -509,10 +597,14 @@ function cmdInitPhaseOp(cwd, phase, raw) {
       if (uatFile) {
         result.uat_path = toPosixPath(path.join(phaseInfo.directory, uatFile));
       }
+      const reviewsFile = files.find(f => f.endsWith('-REVIEWS.md') || f === 'REVIEWS.md');
+      if (reviewsFile) {
+        result.reviews_path = toPosixPath(path.join(phaseInfo.directory, reviewsFile));
+      }
     } catch { /* intentionally empty */ }
   }
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitTodos(cwd, area, raw) {
@@ -571,7 +663,7 @@ function cmdInitTodos(cwd, area, raw) {
     pending_dir_exists: pathExistsInternal(cwd, '.planning/todos/pending'),
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitMilestoneOp(cwd, raw) {
@@ -632,7 +724,7 @@ function cmdInitMilestoneOp(cwd, raw) {
     phases_dir_exists: pathExistsInternal(cwd, '.planning/phases'),
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitMapCodebase(cwd, raw) {
@@ -666,7 +758,7 @@ function cmdInitMapCodebase(cwd, raw) {
     codebase_dir_exists: pathExistsInternal(cwd, '.planning/codebase'),
   };
 
-  output(result, raw);
+  output(withProjectRoot(cwd, result), raw);
 }
 
 function cmdInitProgress(cwd, raw) {
@@ -813,6 +905,165 @@ function cmdInitProgress(cwd, raw) {
     config_path: '.planning/config.json',
   };
 
+  output(withProjectRoot(cwd, result), raw);
+}
+
+/**
+ * Detect child git repos in a directory (one level deep).
+ * Returns array of { name, path, has_uncommitted } objects.
+ */
+function detectChildRepos(dir) {
+  const repos = [];
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return repos; }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dir, entry.name);
+    const gitDir = path.join(fullPath, '.git');
+    if (fs.existsSync(gitDir)) {
+      let hasUncommitted = false;
+      try {
+        const status = execSync('git status --porcelain', { cwd: fullPath, encoding: 'utf8', timeout: 5000 });
+        hasUncommitted = status.trim().length > 0;
+      } catch { /* best-effort */ }
+      repos.push({ name: entry.name, path: fullPath, has_uncommitted: hasUncommitted });
+    }
+  }
+  return repos;
+}
+
+function cmdInitNewWorkspace(cwd, raw) {
+  const homedir = process.env.HOME || require('os').homedir();
+  const defaultBase = path.join(homedir, 'gsd-workspaces');
+
+  // Detect child git repos for interactive selection
+  const childRepos = detectChildRepos(cwd);
+
+  // Check if git worktree is available
+  let worktreeAvailable = false;
+  try {
+    execSync('git --version', { encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
+    worktreeAvailable = true;
+  } catch { /* no git at all */ }
+
+  const result = {
+    default_workspace_base: defaultBase,
+    child_repos: childRepos,
+    child_repo_count: childRepos.length,
+    worktree_available: worktreeAvailable,
+    is_git_repo: pathExistsInternal(cwd, '.git'),
+    cwd_repo_name: path.basename(cwd),
+  };
+
+  output(withProjectRoot(cwd, result), raw);
+}
+
+function cmdInitListWorkspaces(cwd, raw) {
+  const homedir = process.env.HOME || require('os').homedir();
+  const defaultBase = path.join(homedir, 'gsd-workspaces');
+
+  const workspaces = [];
+  if (fs.existsSync(defaultBase)) {
+    let entries;
+    try { entries = fs.readdirSync(defaultBase, { withFileTypes: true }); } catch { entries = []; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const wsPath = path.join(defaultBase, entry.name);
+      const manifestPath = path.join(wsPath, 'WORKSPACE.md');
+      if (!fs.existsSync(manifestPath)) continue;
+
+      let repoCount = 0;
+      let hasProject = false;
+      let strategy = 'unknown';
+      try {
+        const manifest = fs.readFileSync(manifestPath, 'utf8');
+        const strategyMatch = manifest.match(/^Strategy:\s*(.+)$/m);
+        if (strategyMatch) strategy = strategyMatch[1].trim();
+        // Count table rows (lines starting with |, excluding header and separator)
+        const tableRows = manifest.split('\n').filter(l => l.match(/^\|\s*\w/) && !l.includes('Repo') && !l.includes('---'));
+        repoCount = tableRows.length;
+      } catch { /* best-effort */ }
+      hasProject = fs.existsSync(path.join(wsPath, '.planning', 'PROJECT.md'));
+
+      workspaces.push({
+        name: entry.name,
+        path: wsPath,
+        repo_count: repoCount,
+        strategy,
+        has_project: hasProject,
+      });
+    }
+  }
+
+  const result = {
+    workspace_base: defaultBase,
+    workspaces,
+    workspace_count: workspaces.length,
+  };
+
+  output(result, raw);
+}
+
+function cmdInitRemoveWorkspace(cwd, name, raw) {
+  const homedir = process.env.HOME || require('os').homedir();
+  const defaultBase = path.join(homedir, 'gsd-workspaces');
+
+  if (!name) {
+    error('workspace name required for init remove-workspace');
+  }
+
+  const wsPath = path.join(defaultBase, name);
+  const manifestPath = path.join(wsPath, 'WORKSPACE.md');
+
+  if (!fs.existsSync(wsPath)) {
+    error(`Workspace not found: ${wsPath}`);
+  }
+
+  // Parse manifest for repo info
+  const repos = [];
+  let strategy = 'unknown';
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const manifest = fs.readFileSync(manifestPath, 'utf8');
+      const strategyMatch = manifest.match(/^Strategy:\s*(.+)$/m);
+      if (strategyMatch) strategy = strategyMatch[1].trim();
+
+      // Parse table rows for repo names and source paths
+      const lines = manifest.split('\n');
+      for (const line of lines) {
+        const match = line.match(/^\|\s*(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|$/);
+        if (match && match[1] !== 'Repo' && !match[1].includes('---')) {
+          repos.push({ name: match[1], source: match[2], branch: match[3], strategy: match[4] });
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  // Check for uncommitted changes in workspace repos
+  const dirtyRepos = [];
+  for (const repo of repos) {
+    const repoPath = path.join(wsPath, repo.name);
+    if (!fs.existsSync(repoPath)) continue;
+    try {
+      const status = execSync('git status --porcelain', { cwd: repoPath, encoding: 'utf8', timeout: 5000, stdio: 'pipe' });
+      if (status.trim().length > 0) {
+        dirtyRepos.push(repo.name);
+      }
+    } catch { /* best-effort */ }
+  }
+
+  const result = {
+    workspace_name: name,
+    workspace_path: wsPath,
+    has_manifest: fs.existsSync(manifestPath),
+    strategy,
+    repos,
+    repo_count: repos.length,
+    dirty_repos: dirtyRepos,
+    has_dirty_repos: dirtyRepos.length > 0,
+  };
+
   output(result, raw);
 }
 
@@ -829,4 +1080,8 @@ module.exports = {
   cmdInitMilestoneOp,
   cmdInitMapCodebase,
   cmdInitProgress,
+  cmdInitNewWorkspace,
+  cmdInitListWorkspaces,
+  cmdInitRemoveWorkspace,
+  detectChildRepos,
 };

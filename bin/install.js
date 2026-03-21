@@ -15,6 +15,7 @@ const reset = '\x1b[0m';
 
 // Codex config.toml constants
 const GSD_CODEX_MARKER = '# GSD Agent Configuration \u2014 managed by get-shit-done installer';
+const GSD_CODEX_HOOKS_OWNERSHIP_PREFIX = '# GSD codex_hooks ownership: ';
 
 // Copilot instructions marker constants
 const GSD_COPILOT_INSTRUCTIONS_MARKER = '<!-- GSD Configuration \u2014 managed by get-shit-done installer -->';
@@ -1019,24 +1020,29 @@ function stripCodexGsdAgentSections(content) {
  * Returns cleaned content, or null if file would be empty.
  */
 function stripGsdFromCodexConfig(content) {
+  const eol = detectLineEnding(content);
   const markerIndex = content.indexOf(GSD_CODEX_MARKER);
+  const codexHooksOwnership = getManagedCodexHooksOwnership(content);
 
   if (markerIndex !== -1) {
     // Has GSD marker — remove everything from marker to EOF
-    let before = content.substring(0, markerIndex).trimEnd();
+    let before = content.substring(0, markerIndex);
+    before = stripCodexHooksFeatureAssignments(before, codexHooksOwnership);
     // Also strip GSD-injected feature keys above the marker (Case 3 inject)
-    before = before.replace(/^multi_agent\s*=\s*true\s*\n?/m, '');
-    before = before.replace(/^default_mode_request_user_input\s*=\s*true\s*\n?/m, '');
+    before = before.replace(/^multi_agent\s*=\s*true\s*(?:\r?\n)?/m, '');
+    before = before.replace(/^default_mode_request_user_input\s*=\s*true\s*(?:\r?\n)?/m, '');
     before = before.replace(/^\[features\]\s*\n(?=\[|$)/m, '');
-    before = before.replace(/\n{3,}/g, '\n\n').trim();
+    before = before.replace(/^\[agents\]\s*\n(?=\[|$)/m, '');
+    before = before.replace(/^(?:\r?\n)+/, '').trimEnd();
     if (!before) return null;
-    return before + '\n';
+    return before + eol;
   }
 
   // No marker but may have GSD-injected feature keys
   let cleaned = content;
-  cleaned = cleaned.replace(/^multi_agent\s*=\s*true\s*\n?/m, '');
-  cleaned = cleaned.replace(/^default_mode_request_user_input\s*=\s*true\s*\n?/m, '');
+  cleaned = stripCodexHooksFeatureAssignments(cleaned, codexHooksOwnership);
+  cleaned = cleaned.replace(/^multi_agent\s*=\s*true\s*(?:\r?\n)?/m, '');
+  cleaned = cleaned.replace(/^default_mode_request_user_input\s*=\s*true\s*(?:\r?\n)?/m, '');
 
   // Remove [agents.gsd-*] sections (from header to next section or EOF)
   cleaned = stripCodexGsdAgentSections(cleaned);
@@ -1047,11 +1053,822 @@ function stripGsdFromCodexConfig(content) {
   // Remove [agents] section if now empty
   cleaned = cleaned.replace(/^\[agents\]\s*\n(?=\[|$)/m, '');
 
-  // Clean up excessive blank lines
-  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  cleaned = cleaned.replace(/^(?:\r?\n)+/, '').trimEnd();
 
   if (!cleaned) return null;
-  return cleaned + '\n';
+  return cleaned + eol;
+}
+
+function detectLineEnding(content) {
+  const firstNewlineIndex = content.indexOf('\n');
+  if (firstNewlineIndex === -1) {
+    return '\n';
+  }
+  return firstNewlineIndex > 0 && content[firstNewlineIndex - 1] === '\r' ? '\r\n' : '\n';
+}
+
+function splitTomlLines(content) {
+  const lines = [];
+  let start = 0;
+
+  while (start < content.length) {
+    const newlineIndex = content.indexOf('\n', start);
+    if (newlineIndex === -1) {
+      lines.push({
+        start,
+        end: content.length,
+        text: content.slice(start),
+        eol: '',
+      });
+      break;
+    }
+
+    const hasCr = newlineIndex > start && content[newlineIndex - 1] === '\r';
+    const end = hasCr ? newlineIndex - 1 : newlineIndex;
+    lines.push({
+      start,
+      end,
+      text: content.slice(start, end),
+      eol: hasCr ? '\r\n' : '\n',
+    });
+    start = newlineIndex + 1;
+  }
+
+  return lines;
+}
+
+function findTomlCommentStart(line) {
+  let i = 0;
+  let multilineState = null;
+
+  while (i < line.length) {
+    if (multilineState === 'literal') {
+      const closeIndex = line.indexOf('\'\'\'', i);
+      if (closeIndex === -1) {
+        return -1;
+      }
+      i = closeIndex + 3;
+      multilineState = null;
+      continue;
+    }
+
+    if (multilineState === 'basic') {
+      const closeIndex = findMultilineBasicStringClose(line, i);
+      if (closeIndex === -1) {
+        return -1;
+      }
+      i = closeIndex + 3;
+      multilineState = null;
+      continue;
+    }
+
+    const ch = line[i];
+
+    if (ch === '#') {
+      return i;
+    }
+
+    if (ch === '\'') {
+      if (line.startsWith('\'\'\'', i)) {
+        multilineState = 'literal';
+        i += 3;
+        continue;
+      }
+      const close = line.indexOf('\'', i + 1);
+      if (close === -1) return -1;
+      i = close + 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      if (line.startsWith('"""', i)) {
+        multilineState = 'basic';
+        i += 3;
+        continue;
+      }
+      i += 1;
+      while (i < line.length) {
+        if (line[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (line[i] === '"') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    i += 1;
+  }
+
+  return -1;
+}
+
+function isEscapedInBasicString(line, index) {
+  let slashCount = 0;
+  let cursor = index - 1;
+
+  while (cursor >= 0 && line[cursor] === '\\') {
+    slashCount += 1;
+    cursor -= 1;
+  }
+
+  return slashCount % 2 === 1;
+}
+
+function findMultilineBasicStringClose(line, startIndex) {
+  let searchIndex = startIndex;
+
+  while (searchIndex < line.length) {
+    const closeIndex = line.indexOf('"""', searchIndex);
+    if (closeIndex === -1) {
+      return -1;
+    }
+    if (!isEscapedInBasicString(line, closeIndex)) {
+      return closeIndex;
+    }
+    searchIndex = closeIndex + 1;
+  }
+
+  return -1;
+}
+
+function advanceTomlMultilineStringState(line, multilineState) {
+  let i = 0;
+  let state = multilineState;
+
+  while (i < line.length) {
+    if (state === 'literal') {
+      const closeIndex = line.indexOf('\'\'\'', i);
+      if (closeIndex === -1) {
+        return state;
+      }
+      i = closeIndex + 3;
+      state = null;
+      continue;
+    }
+
+    if (state === 'basic') {
+      const closeIndex = findMultilineBasicStringClose(line, i);
+      if (closeIndex === -1) {
+        return state;
+      }
+      i = closeIndex + 3;
+      state = null;
+      continue;
+    }
+
+    const ch = line[i];
+
+    if (ch === '#') {
+      return state;
+    }
+
+    if (ch === '\'') {
+      if (line.startsWith('\'\'\'', i)) {
+        state = 'literal';
+        i += 3;
+        continue;
+      }
+      const close = line.indexOf('\'', i + 1);
+      if (close === -1) {
+        return state;
+      }
+      i = close + 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      if (line.startsWith('"""', i)) {
+        state = 'basic';
+        i += 3;
+        continue;
+      }
+      i += 1;
+      while (i < line.length) {
+        if (line[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (line[i] === '"') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    i += 1;
+  }
+
+  return state;
+}
+
+function parseTomlBracketHeader(line, array) {
+  let i = 0;
+
+  while (i < line.length && /\s/.test(line[i])) {
+    i += 1;
+  }
+
+  const open = array ? '[[' : '[';
+  const close = array ? ']]' : ']';
+  if (!line.startsWith(open, i)) {
+    return null;
+  }
+
+  i += open.length;
+  const start = i;
+
+  while (i < line.length) {
+    if (line[i] === '\'' || line[i] === '"') {
+      const quote = line[i];
+      i += 1;
+
+      while (i < line.length) {
+        if (quote === '"' && line[i] === '\\') {
+          i += 2;
+          continue;
+        }
+
+        if (line[i] === quote) {
+          i += 1;
+          break;
+        }
+
+        i += 1;
+      }
+
+      continue;
+    }
+
+    if (line.startsWith(close, i)) {
+      const rawPath = line.slice(start, i).trim();
+      const segments = parseTomlKeyPath(rawPath);
+      if (!segments) {
+        return null;
+      }
+
+      i += close.length;
+      while (i < line.length && /\s/.test(line[i])) {
+        i += 1;
+      }
+
+      if (i < line.length && line[i] !== '#') {
+        return null;
+      }
+
+      return { path: segments.join('.'), segments, array };
+    }
+
+    if (line[i] === '#' || line[i] === '\r' || line[i] === '\n') {
+      return null;
+    }
+
+    i += 1;
+  }
+
+  return null;
+}
+
+function parseTomlTableHeader(line) {
+  return parseTomlBracketHeader(line, true) || parseTomlBracketHeader(line, false);
+}
+
+function findTomlAssignmentEquals(line) {
+  let i = 0;
+
+  while (i < line.length) {
+    const ch = line[i];
+
+    if (ch === '#') {
+      return -1;
+    }
+
+    if (ch === '\'') {
+      i += 1;
+      while (i < line.length) {
+        if (line[i] === '\'') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      i += 1;
+      while (i < line.length) {
+        if (line[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (line[i] === '"') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '=') {
+      return i;
+    }
+
+    i += 1;
+  }
+
+  return -1;
+}
+
+function parseTomlKeyPath(keyText) {
+  const segments = [];
+  let i = 0;
+
+  while (i < keyText.length) {
+    while (i < keyText.length && /\s/.test(keyText[i])) {
+      i += 1;
+    }
+
+    if (i >= keyText.length) {
+      break;
+    }
+
+    if (keyText[i] === '\'' || keyText[i] === '"') {
+      const quote = keyText[i];
+      let segment = '';
+      let closed = false;
+      i += 1;
+
+      while (i < keyText.length) {
+        if (quote === '"' && keyText[i] === '\\') {
+          if (i + 1 >= keyText.length) {
+            return null;
+          }
+          segment += keyText[i + 1];
+          i += 2;
+          continue;
+        }
+
+        if (keyText[i] === quote) {
+          i += 1;
+          closed = true;
+          break;
+        }
+
+        segment += keyText[i];
+        i += 1;
+      }
+
+      if (!closed) {
+        return null;
+      }
+
+      segments.push(segment);
+    } else {
+      const match = keyText.slice(i).match(/^[A-Za-z0-9_-]+/);
+      if (!match) {
+        return null;
+      }
+      segments.push(match[0]);
+      i += match[0].length;
+    }
+
+    while (i < keyText.length && /\s/.test(keyText[i])) {
+      i += 1;
+    }
+
+    if (i >= keyText.length) {
+      break;
+    }
+
+    if (keyText[i] !== '.') {
+      return null;
+    }
+
+    i += 1;
+  }
+
+  return segments.length > 0 ? segments : null;
+}
+
+function parseTomlKey(line) {
+  const header = parseTomlTableHeader(line);
+  if (header) {
+    return null;
+  }
+
+  const equalsIndex = findTomlAssignmentEquals(line);
+  if (equalsIndex === -1) {
+    return null;
+  }
+
+  const raw = line.slice(0, equalsIndex).trim();
+  const segments = parseTomlKeyPath(raw);
+  if (!segments) {
+    return null;
+  }
+
+  return { raw, segments };
+}
+
+function getTomlLineRecords(content) {
+  const lines = splitTomlLines(content);
+  const records = [];
+  let currentTablePath = null;
+  let multilineState = null;
+
+  for (const line of lines) {
+    const startsInMultilineString = multilineState !== null;
+    const record = {
+      ...line,
+      startsInMultilineString,
+      tablePath: currentTablePath,
+      tableHeader: null,
+      keySegments: null,
+    };
+
+    if (!startsInMultilineString) {
+      const header = parseTomlTableHeader(line.text);
+      if (header) {
+        record.tableHeader = header;
+        currentTablePath = header.path;
+      } else {
+        const key = parseTomlKey(line.text);
+        record.keySegments = key ? key.segments : null;
+        record.keyRaw = key ? key.raw : null;
+      }
+    }
+
+    multilineState = advanceTomlMultilineStringState(line.text, multilineState);
+    records.push(record);
+  }
+
+  return records;
+}
+
+function getTomlTableSections(content) {
+  const headerLines = getTomlLineRecords(content).filter((record) => record.tableHeader);
+
+  return headerLines.map((record, index) => ({
+    path: record.tableHeader.path,
+    array: record.tableHeader.array,
+    start: record.start,
+    headerEnd: record.end + record.eol.length,
+    end: index + 1 < headerLines.length ? headerLines[index + 1].start : content.length,
+  }));
+}
+
+function collapseTomlBlankLines(content) {
+  const eol = detectLineEnding(content);
+  return content.replace(/(?:\r?\n){3,}/g, eol + eol);
+}
+
+function removeContentRanges(content, ranges) {
+  const normalizedRanges = ranges
+    .filter((range) => range && range.start < range.end)
+    .sort((a, b) => a.start - b.start);
+
+  if (normalizedRanges.length === 0) {
+    return content;
+  }
+
+  const mergedRanges = [{ ...normalizedRanges[0] }];
+
+  for (let i = 1; i < normalizedRanges.length; i += 1) {
+    const current = normalizedRanges[i];
+    const previous = mergedRanges[mergedRanges.length - 1];
+
+    if (current.start <= previous.end) {
+      previous.end = Math.max(previous.end, current.end);
+      continue;
+    }
+
+    mergedRanges.push({ ...current });
+  }
+
+  let cleaned = '';
+  let cursor = 0;
+
+  for (const range of mergedRanges) {
+    cleaned += content.slice(cursor, range.start);
+    cursor = range.end;
+  }
+
+  cleaned += content.slice(cursor);
+  return cleaned;
+}
+
+function stripCodexHooksFeatureAssignments(content, ownership = null) {
+  const lineRecords = getTomlLineRecords(content);
+  const tableSections = getTomlTableSections(content);
+  const removalRanges = [];
+  const featuresSection = tableSections.find((section) => !section.array && section.path === 'features');
+  const shouldStripSectionKey = ownership === 'section' || ownership === 'all';
+  const shouldStripRootDottedKey = ownership === 'root_dotted' || ownership === 'all';
+
+  if (featuresSection && shouldStripSectionKey) {
+    const sectionRecords = lineRecords.filter((record) =>
+      !record.tableHeader &&
+      record.start >= featuresSection.headerEnd &&
+      record.end + record.eol.length <= featuresSection.end
+    );
+
+    const codexHookRecords = sectionRecords.filter((record) =>
+      !record.startsInMultilineString &&
+      record.keySegments &&
+      record.keySegments.length === 1 &&
+      record.keySegments[0] === 'codex_hooks'
+    );
+
+    for (const record of codexHookRecords) {
+      removalRanges.push({
+        start: record.start,
+        end: findTomlAssignmentBlockEnd(content, record),
+      });
+    }
+
+    if (codexHookRecords.length > 0) {
+      const removedStarts = new Set(codexHookRecords.map((record) => record.start));
+      const hasRemainingContent = sectionRecords.some((record) => {
+        if (removedStarts.has(record.start)) {
+          return false;
+        }
+
+        const trimmed = record.text.trim();
+        return trimmed !== '' && !trimmed.startsWith('#');
+      });
+      const hasRemainingComments = sectionRecords.some((record) => {
+        if (removedStarts.has(record.start)) {
+          return false;
+        }
+
+        return record.text.trim().startsWith('#');
+      });
+
+      if (!hasRemainingContent && !hasRemainingComments) {
+        removalRanges.push({
+          start: featuresSection.start,
+          end: featuresSection.end,
+        });
+      }
+    }
+  }
+
+  if (shouldStripRootDottedKey) {
+    const rootCodexHookRecords = lineRecords.filter((record) =>
+      !record.tableHeader &&
+      !record.startsInMultilineString &&
+      record.tablePath === null &&
+      record.keySegments &&
+      record.keySegments.length === 2 &&
+      record.keySegments[0] === 'features' &&
+      record.keySegments[1] === 'codex_hooks'
+    );
+
+    for (const record of rootCodexHookRecords) {
+      removalRanges.push({
+        start: record.start,
+        end: findTomlAssignmentBlockEnd(content, record),
+      });
+    }
+  }
+
+  return removeContentRanges(content, removalRanges);
+}
+
+function getManagedCodexHooksOwnership(content) {
+  const markerIndex = content.indexOf(GSD_CODEX_MARKER);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  const afterMarker = content.slice(markerIndex + GSD_CODEX_MARKER.length);
+  const match = afterMarker.match(/^\r?\n# GSD codex_hooks ownership: (section|root_dotted)\r?\n/);
+  return match ? match[1] : null;
+}
+
+function setManagedCodexHooksOwnership(content, ownership) {
+  const markerIndex = content.indexOf(GSD_CODEX_MARKER);
+  if (markerIndex === -1) {
+    return content;
+  }
+
+  const eol = detectLineEnding(content);
+  const markerEnd = markerIndex + GSD_CODEX_MARKER.length;
+  const afterMarker = content.slice(markerEnd);
+  const normalizedAfterMarker = afterMarker.replace(
+    /^\r?\n# GSD codex_hooks ownership: (?:section|root_dotted)\r?\n/,
+    eol
+  );
+
+  if (!ownership) {
+    return content.slice(0, markerEnd) + normalizedAfterMarker;
+  }
+
+  const remainder = normalizedAfterMarker.replace(/^\r?\n/, '');
+  return content.slice(0, markerEnd) +
+    eol +
+    `${GSD_CODEX_HOOKS_OWNERSHIP_PREFIX}${ownership}${eol}` +
+    remainder;
+}
+
+function isLegacyGsdAgentsSection(body) {
+  const lineRecords = getTomlLineRecords(body);
+  const legacyKeys = new Set(['max_threads', 'max_depth']);
+  let sawLegacyKey = false;
+
+  for (const record of lineRecords) {
+    if (record.startsInMultilineString) {
+      return false;
+    }
+
+    if (record.tableHeader) {
+      return false;
+    }
+
+    const trimmed = record.text.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    if (!record.keySegments || record.keySegments.length !== 1 || !legacyKeys.has(record.keySegments[0])) {
+      return false;
+    }
+
+    sawLegacyKey = true;
+  }
+
+  return sawLegacyKey;
+}
+
+function stripLeakedGsdCodexSections(content) {
+  const leakedSections = getTomlTableSections(content)
+    .filter((section) =>
+      section.path.startsWith('agents.gsd-') ||
+      (
+        section.path === 'agents' &&
+        isLegacyGsdAgentsSection(content.slice(section.headerEnd, section.end))
+      )
+    );
+
+  if (leakedSections.length === 0) {
+    return content;
+  }
+
+  let cleaned = '';
+  let cursor = 0;
+
+  for (const section of leakedSections) {
+    cleaned += content.slice(cursor, section.start);
+    cursor = section.end;
+  }
+
+  cleaned += content.slice(cursor);
+  return collapseTomlBlankLines(cleaned);
+}
+
+function normalizeCodexHooksLine(line, key) {
+  const leadingWhitespace = line.match(/^\s*/)[0];
+  const commentStart = findTomlCommentStart(line);
+  const comment = commentStart === -1 ? '' : line.slice(commentStart);
+  return `${leadingWhitespace}${key} = true${comment ? ` ${comment}` : ''}`;
+}
+
+function findTomlAssignmentBlockEnd(content, record) {
+  const equalsIndex = findTomlAssignmentEquals(record.text);
+  if (equalsIndex === -1) {
+    return record.end + record.eol.length;
+  }
+
+  let i = record.start + equalsIndex + 1;
+  let arrayDepth = 0;
+  let inlineTableDepth = 0;
+
+  while (i < content.length) {
+    if (content.startsWith('\'\'\'', i)) {
+      const closeIndex = content.indexOf('\'\'\'', i + 3);
+      if (closeIndex === -1) {
+        return content.length;
+      }
+      i = closeIndex + 3;
+      continue;
+    }
+
+    if (content.startsWith('"""', i)) {
+      const closeIndex = findMultilineBasicStringClose(content, i + 3);
+      if (closeIndex === -1) {
+        return content.length;
+      }
+      i = closeIndex + 3;
+      continue;
+    }
+
+    const ch = content[i];
+
+    if (ch === '\'') {
+      i += 1;
+      while (i < content.length) {
+        if (content[i] === '\'') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      i += 1;
+      while (i < content.length) {
+        if (content[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (content[i] === '"') {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '[') {
+      arrayDepth += 1;
+      i += 1;
+      continue;
+    }
+
+    if (ch === ']') {
+      if (arrayDepth > 0) {
+        arrayDepth -= 1;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '{') {
+      inlineTableDepth += 1;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      if (inlineTableDepth > 0) {
+        inlineTableDepth -= 1;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '#') {
+      while (i < content.length && content[i] !== '\n') {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '\n' && arrayDepth === 0 && inlineTableDepth === 0) {
+      return i + 1;
+    }
+
+    i += 1;
+  }
+
+  return content.length;
+}
+
+function rewriteTomlKeyLines(content, matches, key) {
+  if (matches.length === 0) {
+    return content;
+  }
+
+  let rewritten = '';
+  let cursor = 0;
+
+  matches.forEach((match, index) => {
+    rewritten += content.slice(cursor, match.start);
+    if (index === 0) {
+      const blockEnd = findTomlAssignmentBlockEnd(content, match);
+      const blockEol = blockEnd > 0 && content[blockEnd - 1] === '\n'
+        ? (blockEnd > 1 && content[blockEnd - 2] === '\r' ? '\r\n' : '\n')
+        : '';
+      rewritten += normalizeCodexHooksLine(match.text, match.keyRaw || key) + blockEol;
+      cursor = blockEnd;
+      return;
+    }
+    cursor = findTomlAssignmentBlockEnd(content, match);
+  });
+
+  rewritten += content.slice(cursor);
+  return rewritten;
 }
 
 /**
@@ -1066,6 +1883,8 @@ function mergeCodexConfig(configPath, gsdBlock) {
   }
 
   const existing = fs.readFileSync(configPath, 'utf8');
+  const eol = detectLineEnding(existing);
+  const normalizedGsdBlock = gsdBlock.replace(/\r?\n/g, eol);
   const markerIndex = existing.indexOf(GSD_CODEX_MARKER);
 
   // Case 2: Has GSD marker — truncate and re-append
@@ -1073,29 +1892,137 @@ function mergeCodexConfig(configPath, gsdBlock) {
     let before = existing.substring(0, markerIndex).trimEnd();
     if (before) {
       // Strip any GSD-managed sections that leaked above the marker from previous installs
-      before = stripCodexGsdAgentSections(before);
-      before = before.replace(/^\[agents\]\n(?:(?!\[)[^\n]*\n?)*/m, '');
-      before = before.replace(/\n{3,}/g, '\n\n').trimEnd();
+      before = stripLeakedGsdCodexSections(before).trimEnd();
 
-      fs.writeFileSync(configPath, before + '\n\n' + gsdBlock + '\n');
+      fs.writeFileSync(configPath, before + eol + eol + normalizedGsdBlock + eol);
     } else {
-      fs.writeFileSync(configPath, gsdBlock + '\n');
+      fs.writeFileSync(configPath, normalizedGsdBlock + eol);
     }
     return;
   }
 
   // Case 3: No marker — append GSD block
-  let content = existing;
-  content = stripCodexGsdAgentSections(content);
-  content = content.replace(/\n{3,}/g, '\n\n').trimEnd();
-
+  let content = stripLeakedGsdCodexSections(existing).trimEnd();
   if (content) {
-    content = content + '\n\n' + gsdBlock + '\n';
+    content = content + eol + eol + normalizedGsdBlock + eol;
   } else {
-    content = gsdBlock + '\n';
+    content = normalizedGsdBlock + eol;
   }
 
   fs.writeFileSync(configPath, content);
+}
+
+function ensureCodexHooksFeature(configContent) {
+  const eol = detectLineEnding(configContent);
+  const lineRecords = getTomlLineRecords(configContent);
+
+  const featuresSection = getTomlTableSections(configContent)
+    .find((section) => !section.array && section.path === 'features');
+
+  if (featuresSection) {
+    const sectionLines = lineRecords
+      .filter((record) =>
+        !record.tableHeader &&
+        !record.startsInMultilineString &&
+        record.tablePath === 'features' &&
+        record.start >= featuresSection.headerEnd &&
+        record.end + record.eol.length <= featuresSection.end &&
+        record.keySegments &&
+        record.keySegments.length === 1 &&
+        record.keySegments[0] === 'codex_hooks'
+      );
+
+    if (sectionLines.length > 0) {
+      return {
+        content: rewriteTomlKeyLines(configContent, sectionLines, 'codex_hooks'),
+        ownership: null,
+      };
+    }
+
+    const sectionBody = configContent.slice(featuresSection.headerEnd, featuresSection.end);
+    const needsSeparator = sectionBody.length > 0 && !sectionBody.endsWith('\n') && !sectionBody.endsWith('\r\n');
+    const insertPrefix = sectionBody.length === 0 && featuresSection.headerEnd === configContent.length ? eol : '';
+    const insertText = `${insertPrefix}${needsSeparator ? eol : ''}codex_hooks = true${eol}`;
+    return {
+      content: configContent.slice(0, featuresSection.end) + insertText + configContent.slice(featuresSection.end),
+      ownership: 'section',
+    };
+  }
+
+  const rootFeatureLines = lineRecords
+    .filter((record) =>
+      !record.tableHeader &&
+      !record.startsInMultilineString &&
+      record.tablePath === null &&
+      record.keySegments &&
+      record.keySegments[0] === 'features'
+    );
+
+  const rootCodexHooksLines = rootFeatureLines
+    .filter((record) => record.keySegments.length === 2 && record.keySegments[1] === 'codex_hooks');
+
+  if (rootCodexHooksLines.length > 0) {
+    return {
+      content: rewriteTomlKeyLines(configContent, rootCodexHooksLines, 'features.codex_hooks'),
+      ownership: null,
+    };
+  }
+
+  const rootFeaturesValueLines = rootFeatureLines
+    .filter((record) => record.keySegments.length === 1);
+
+  if (rootFeaturesValueLines.length > 0) {
+    return { content: configContent, ownership: null };
+  }
+
+  if (rootFeatureLines.length > 0) {
+    const lastFeatureLine = rootFeatureLines[rootFeatureLines.length - 1];
+    const insertAt = findTomlAssignmentBlockEnd(configContent, lastFeatureLine);
+    const prefix = insertAt > 0 && configContent[insertAt - 1] === '\n' ? '' : eol;
+    return {
+      content: configContent.slice(0, insertAt) +
+        `${prefix}features.codex_hooks = true${eol}` +
+        configContent.slice(insertAt),
+      ownership: 'root_dotted',
+    };
+  }
+
+  const featuresBlock = `[features]${eol}codex_hooks = true${eol}`;
+  if (!configContent) {
+    return { content: featuresBlock, ownership: 'section' };
+  }
+  return { content: featuresBlock + eol + configContent, ownership: 'section' };
+}
+
+function hasEnabledCodexHooksFeature(configContent) {
+  const lineRecords = getTomlLineRecords(configContent);
+
+  return lineRecords.some((record) => {
+    if (record.tableHeader || record.startsInMultilineString || !record.keySegments) {
+      return false;
+    }
+
+    const isSectionKey = record.tablePath === 'features' &&
+      record.keySegments.length === 1 &&
+      record.keySegments[0] === 'codex_hooks';
+    const isRootDottedKey = record.tablePath === null &&
+      record.keySegments.length === 2 &&
+      record.keySegments[0] === 'features' &&
+      record.keySegments[1] === 'codex_hooks';
+
+    if (!isSectionKey && !isRootDottedKey) {
+      return false;
+    }
+
+    const equalsIndex = findTomlAssignmentEquals(record.text);
+    if (equalsIndex === -1) {
+      return false;
+    }
+
+    const commentStart = findTomlCommentStart(record.text);
+    const valueText = record.text.slice(equalsIndex + 1, commentStart === -1 ? record.text.length : commentStart).trim();
+    return valueText === 'true';
+  });
 }
 
 /**
@@ -2196,7 +3123,7 @@ function uninstall(isGlobal, runtime = 'claude') {
   // 4. Remove GSD hooks
   const hooksDir = path.join(targetDir, 'hooks');
   if (fs.existsSync(hooksDir)) {
-    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js'];
+    const gsdHooks = ['gsd-statusline.js', 'gsd-check-update.js', 'gsd-check-update.sh', 'gsd-context-monitor.js', 'gsd-prompt-guard.js'];
     let hookCount = 0;
     for (const hook of gsdHooks) {
       const hookPath = path.join(hooksDir, hook);
@@ -2284,6 +3211,27 @@ function uninstall(isGlobal, runtime = 'claude') {
         if (settings.hooks[eventName].length === 0) {
           delete settings.hooks[eventName];
         }
+      }
+    }
+
+    // Remove GSD hooks from PreToolUse (prompt injection guard)
+    if (settings.hooks && settings.hooks.PreToolUse) {
+      const before = settings.hooks.PreToolUse.length;
+      settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(entry => {
+        if (entry.hooks && Array.isArray(entry.hooks)) {
+          const hasGsdHook = entry.hooks.some(h =>
+            h.command && h.command.includes('gsd-prompt-guard')
+          );
+          return !hasGsdHook;
+        }
+        return true;
+      });
+      if (settings.hooks.PreToolUse.length < before) {
+        settingsModified = true;
+        console.log(`  ${green}✓${reset} Removed prompt injection guard hook from settings`);
+      }
+      if (settings.hooks.PreToolUse.length === 0) {
+        delete settings.hooks.PreToolUse;
       }
     }
 
@@ -2952,6 +3900,11 @@ function install(isGlobal, runtime = 'claude') {
     }
   }
 
+  // Clear stale update cache so next session re-evaluates hook versions
+  // targetDir is e.g. ~/.claude/get-shit-done/, parent is the config dir
+  const updateCacheFile = path.join(path.dirname(targetDir), 'cache', 'gsd-update-check.json');
+  try { fs.unlinkSync(updateCacheFile); } catch (e) { /* cache may not exist yet */ }
+
   if (failures.length > 0) {
     console.error(`\n  ${yellow}Installation incomplete!${reset} Failed: ${failures.join(', ')}`);
     process.exit(1);
@@ -3023,46 +3976,19 @@ function install(isGlobal, runtime = 'claude') {
     const configPath = path.join(targetDir, 'config.toml');
     try {
       let configContent = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
-
-      // Enable hooks feature flag if not present
-      if (!configContent.includes('codex_hooks')) {
-        if (configContent.includes('[features]')) {
-          // Insert codex_hooks = true right after the [features] header.
-          // Fixes #1202: previous approach could leave non-boolean keys (like
-          // model = "gpt-5.4") under [features], causing Codex TOML parse errors.
-          configContent = configContent.replace(/(\[features\]\n)/, '$1codex_hooks = true\n');
-        } else {
-          configContent = '[features]\ncodex_hooks = true\n\n' + configContent;
-        }
-      }
-
-      // Safety check: detect non-boolean keys under [features] that would break Codex (#1202).
-      // Extract the [features] section content (between [features] and next [section] or EOF).
-      const featuresMatch = configContent.match(/\[features\]\n([\s\S]*?)(?=\n\[|$)/);
-      if (featuresMatch) {
-        const featuresBody = featuresMatch[1];
-        const nonBooleanKeys = featuresBody.split('\n')
-          .filter(line => line.match(/^\s*\w+\s*=/) && !line.match(/=\s*(true|false)\s*(#.*)?$/))
-          .map(line => line.trim());
-        if (nonBooleanKeys.length > 0) {
-          // Move non-boolean keys above [features] to prevent TOML parse errors
-          let cleanedFeatures = featuresBody.split('\n')
-            .filter(line => !line.match(/^\s*\w+\s*=/) || line.match(/=\s*(true|false)\s*(#.*)?$/))
-            .join('\n');
-          const movedKeys = nonBooleanKeys.join('\n') + '\n';
-          configContent = configContent.replace(
-            /\[features\]\n[\s\S]*?(?=\n\[|$)/,
-            movedKeys + '\n[features]\n' + cleanedFeatures.trim() + '\n'
-          );
-          console.log(`  ${yellow}⚠${reset}  Moved ${nonBooleanKeys.length} non-feature key(s) out of [features] section to prevent TOML errors`);
-        }
-      }
+      const eol = detectLineEnding(configContent);
+      const codexHooksFeature = ensureCodexHooksFeature(configContent);
+      configContent = setManagedCodexHooksOwnership(codexHooksFeature.content, codexHooksFeature.ownership);
 
       // Add SessionStart hook for update checking
       const updateCheckScript = path.resolve(targetDir, 'get-shit-done', 'hooks', 'gsd-update-check.js').replace(/\\/g, '/');
-      const hookBlock = `\n# GSD Hooks\n[[hooks]]\nevent = "SessionStart"\ncommand = "node ${updateCheckScript}"\n`;
+      const hookBlock =
+        `${eol}# GSD Hooks${eol}` +
+        `[[hooks]]${eol}` +
+        `event = "SessionStart"${eol}` +
+        `command = "node ${updateCheckScript}"${eol}`;
 
-      if (!configContent.includes('gsd-update-check')) {
+      if (hasEnabledCodexHooksFeature(configContent) && !configContent.includes('gsd-update-check')) {
         configContent += hookBlock;
       }
 
@@ -3107,6 +4033,9 @@ function install(isGlobal, runtime = 'claude') {
   const contextMonitorCommand = isGlobal
     ? buildHookCommand(targetDir, 'gsd-context-monitor.js')
     : 'node ' + dirName + '/hooks/gsd-context-monitor.js';
+  const promptGuardCommand = isGlobal
+    ? buildHookCommand(targetDir, 'gsd-prompt-guard.js')
+    : 'node ' + dirName + '/hooks/gsd-prompt-guard.js';
 
   // Enable experimental agents for Gemini CLI (required for custom sub-agents)
   if (isGemini) {
@@ -3155,14 +4084,60 @@ function install(isGlobal, runtime = 'claude') {
 
     if (!hasContextMonitorHook) {
       settings.hooks[postToolEvent].push({
+        matcher: 'Bash|Edit|Write|MultiEdit|Agent|Task',
         hooks: [
           {
             type: 'command',
-            command: contextMonitorCommand
+            command: contextMonitorCommand,
+            timeout: 10
           }
         ]
       });
       console.log(`  ${green}✓${reset} Configured context window monitor hook`);
+    } else {
+      // Migrate existing context monitor hooks: add matcher and timeout if missing
+      for (const entry of settings.hooks[postToolEvent]) {
+        if (entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-context-monitor'))) {
+          let migrated = false;
+          if (!entry.matcher) {
+            entry.matcher = 'Bash|Edit|Write|MultiEdit|Agent|Task';
+            migrated = true;
+          }
+          for (const h of entry.hooks) {
+            if (h.command && h.command.includes('gsd-context-monitor') && !h.timeout) {
+              h.timeout = 10;
+              migrated = true;
+            }
+          }
+          if (migrated) {
+            console.log(`  ${green}✓${reset} Updated context monitor hook (added matcher + timeout)`);
+          }
+        }
+      }
+    }
+
+    // Configure PreToolUse hook for prompt injection detection
+    const preToolEvent = 'PreToolUse';
+    if (!settings.hooks[preToolEvent]) {
+      settings.hooks[preToolEvent] = [];
+    }
+
+    const hasPromptGuardHook = settings.hooks[preToolEvent].some(entry =>
+      entry.hooks && entry.hooks.some(h => h.command && h.command.includes('gsd-prompt-guard'))
+    );
+
+    if (!hasPromptGuardHook) {
+      settings.hooks[preToolEvent].push({
+        matcher: 'Write|Edit',
+        hooks: [
+          {
+            type: 'command',
+            command: promptGuardCommand,
+            timeout: 5
+          }
+        ]
+      });
+      console.log(`  ${green}✓${reset} Configured prompt injection guard hook`);
     }
   }
 
@@ -3415,6 +4390,7 @@ if (process.env.GSD_TEST_MODE) {
     stripGsdFromCodexConfig,
     mergeCodexConfig,
     installCodexConfig,
+    install,
     convertClaudeCommandToCodexSkill,
     convertClaudeToOpencodeFrontmatter,
     neutralizeAgentReferences,

@@ -115,15 +115,30 @@ function cmdStateGet(cwd, section, raw) {
 function readTextArgOrFile(cwd, value, filePath, label) {
   if (!filePath) return value;
 
-  const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
+  // Path traversal guard: ensure file resolves within project directory
+  const { validatePath } = require('./security.cjs');
+  const pathCheck = validatePath(filePath, cwd, { allowAbsolute: true });
+  if (!pathCheck.safe) {
+    throw new Error(`${label} path rejected: ${pathCheck.error}`);
+  }
+
   try {
-    return fs.readFileSync(resolvedPath, 'utf-8').trimEnd();
+    return fs.readFileSync(pathCheck.resolved, 'utf-8').trimEnd();
   } catch {
     throw new Error(`${label} file not found: ${filePath}`);
   }
 }
 
 function cmdStatePatch(cwd, patches, raw) {
+  // Validate all field names before processing
+  const { validateFieldName } = require('./security.cjs');
+  for (const field of Object.keys(patches)) {
+    const fieldCheck = validateFieldName(field);
+    if (!fieldCheck.valid) {
+      error(`state patch: ${fieldCheck.error}`);
+    }
+  }
+
   const statePath = planningPaths(cwd).state;
   try {
     let content = fs.readFileSync(statePath, 'utf-8');
@@ -159,6 +174,13 @@ function cmdStatePatch(cwd, patches, raw) {
 function cmdStateUpdate(cwd, field, value) {
   if (!field || value === undefined) {
     error('field and value required for state update');
+  }
+
+  // Validate field name to prevent regex injection via crafted field names
+  const { validateFieldName } = require('./security.cjs');
+  const fieldCheck = validateFieldName(field);
+  if (!fieldCheck.valid) {
+    error(`state update: ${fieldCheck.error}`);
   }
 
   const statePath = planningPaths(cwd).state;
@@ -201,14 +223,47 @@ function stateReplaceField(content, fieldName, newValue) {
   return null;
 }
 
+/**
+ * Replace a STATE.md field with fallback field name support.
+ * Tries `primary` first, then `fallback` (if provided), returns content unchanged
+ * if neither matches. This consolidates the replaceWithFallback pattern that was
+ * previously duplicated inline across phase.cjs, milestone.cjs, and state.cjs.
+ */
+function stateReplaceFieldWithFallback(content, primary, fallback, value) {
+  let result = stateReplaceField(content, primary, value);
+  if (result) return result;
+  if (fallback) {
+    result = stateReplaceField(content, fallback, value);
+    if (result) return result;
+  }
+  return content;
+}
+
 function cmdStateAdvancePlan(cwd, raw) {
   const statePath = planningPaths(cwd).state;
   if (!fs.existsSync(statePath)) { output({ error: 'STATE.md not found' }, raw); return; }
 
   let content = fs.readFileSync(statePath, 'utf-8');
-  const currentPlan = parseInt(stateExtractField(content, 'Current Plan'), 10);
-  const totalPlans = parseInt(stateExtractField(content, 'Total Plans in Phase'), 10);
   const today = new Date().toISOString().split('T')[0];
+
+  // Try legacy separate fields first, then compound "Plan: X of Y" format
+  const legacyPlan = stateExtractField(content, 'Current Plan');
+  const legacyTotal = stateExtractField(content, 'Total Plans in Phase');
+  const planField = stateExtractField(content, 'Plan');
+
+  let currentPlan, totalPlans;
+  let useCompoundFormat = false;
+
+  if (legacyPlan && legacyTotal) {
+    currentPlan = parseInt(legacyPlan, 10);
+    totalPlans = parseInt(legacyTotal, 10);
+  } else if (planField) {
+    // Compound format: "2 of 6 in current phase" or "2 of 6"
+    currentPlan = parseInt(planField, 10);
+    const ofMatch = planField.match(/of\s+(\d+)/);
+    totalPlans = ofMatch ? parseInt(ofMatch[1], 10) : NaN;
+    useCompoundFormat = true;
+  }
 
   if (isNaN(currentPlan) || isNaN(totalPlans)) {
     output({ error: 'Cannot parse Current Plan or Total Plans in Phase from STATE.md' }, raw);
@@ -216,15 +271,21 @@ function cmdStateAdvancePlan(cwd, raw) {
   }
 
   if (currentPlan >= totalPlans) {
-    content = stateReplaceField(content, 'Status', 'Phase complete — ready for verification') || content;
-    content = stateReplaceField(content, 'Last Activity', today) || content;
+    content = stateReplaceFieldWithFallback(content, 'Status', null, 'Phase complete — ready for verification');
+    content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
     writeStateMd(statePath, content, cwd);
     output({ advanced: false, reason: 'last_plan', current_plan: currentPlan, total_plans: totalPlans, status: 'ready_for_verification' }, raw, 'false');
   } else {
     const newPlan = currentPlan + 1;
-    content = stateReplaceField(content, 'Current Plan', String(newPlan)) || content;
-    content = stateReplaceField(content, 'Status', 'Ready to execute') || content;
-    content = stateReplaceField(content, 'Last Activity', today) || content;
+    if (useCompoundFormat) {
+      // Preserve compound format: "X of Y in current phase" → replace X only
+      const newPlanValue = planField.replace(/^\d+/, String(newPlan));
+      content = stateReplaceField(content, 'Plan', newPlanValue) || content;
+    } else {
+      content = stateReplaceField(content, 'Current Plan', String(newPlan)) || content;
+    }
+    content = stateReplaceFieldWithFallback(content, 'Status', null, 'Ready to execute');
+    content = stateReplaceFieldWithFallback(content, 'Last Activity', 'Last activity', today);
     writeStateMd(statePath, content, cwd);
     output({ advanced: true, previous_plan: currentPlan, current_plan: newPlan, total_plans: totalPlans }, raw, 'true');
   }
@@ -672,9 +733,20 @@ function stripFrontmatter(content) {
 }
 
 function syncStateFrontmatter(content, cwd) {
+  // Read existing frontmatter BEFORE stripping — it may contain values
+  // that the body no longer has (e.g., Status field removed by an agent).
+  const existingFm = extractFrontmatter(content);
   const body = stripFrontmatter(content);
-  const fm = buildStateFrontmatter(body, cwd);
-  const yamlStr = reconstructFrontmatter(fm);
+  const derivedFm = buildStateFrontmatter(body, cwd);
+
+  // Preserve existing frontmatter status when body-derived status is 'unknown'.
+  // This prevents a missing Status: field in the body from overwriting a
+  // previously valid status (e.g., 'executing' → 'unknown').
+  if (derivedFm.status === 'unknown' && existingFm.status && existingFm.status !== 'unknown') {
+    derivedFm.status = existingFm.status;
+  }
+
+  const yamlStr = reconstructFrontmatter(derivedFm);
   return `---\n${yamlStr}\n---\n\n${body}`;
 }
 
@@ -876,6 +948,7 @@ function cmdSignalResume(cwd, raw) {
 module.exports = {
   stateExtractField,
   stateReplaceField,
+  stateReplaceFieldWithFallback,
   writeStateMd,
   cmdStateLoad,
   cmdStateGet,

@@ -84,7 +84,7 @@ npx get-shit-done-cc@latest
 ```
 
 The installer prompts you to choose:
-1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Copilot, Antigravity, or all
+1. **Runtime** — Claude Code, OpenCode, Gemini, Codex, Copilot, Cursor, Antigravity, or all
 2. **Location** — Global (all projects) or local (current project only)
 
 Verify with:
@@ -127,6 +127,10 @@ npx get-shit-done-cc --codex --local     # Install to ./.codex/
 npx get-shit-done-cc --copilot --global  # Install to ~/.github/
 npx get-shit-done-cc --copilot --local   # Install to ./.github/
 
+# Cursor CLI
+npx get-shit-done-cc --cursor --global      # Install to ~/.cursor/
+npx get-shit-done-cc --cursor --local       # Install to ./.cursor/
+
 # Antigravity (Google, skills-first, Gemini-based)
 npx get-shit-done-cc --antigravity --global # Install to ~/.gemini/antigravity/
 npx get-shit-done-cc --antigravity --local  # Install to ./.agent/
@@ -136,7 +140,7 @@ npx get-shit-done-cc --all --global      # Install to all directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
-Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--copilot`, `--antigravity`, or `--all` to skip the runtime prompt.
+Use `--claude`, `--opencode`, `--gemini`, `--codex`, `--copilot`, `--cursor`, `--antigravity`, or `--all` to skip the runtime prompt.
 
 </details>
 
@@ -424,6 +428,8 @@ GSD handles it for you:
 | `PLAN.md` | Atomic task with XML structure, verification steps |
 | `SUMMARY.md` | What happened, what changed, committed to history |
 | `todos/` | Captured ideas and tasks for later work |
+| `threads/` | Persistent context threads for cross-session work |
+| `seeds/` | Forward-looking ideas that surface at the right milestone |
 
 Size limits based on where Claude's quality degrades. Stay under, get consistent excellence.
 
@@ -496,12 +502,13 @@ You're never locked in. The system adapts.
 | Command | What it does |
 |---------|--------------|
 | `/gsd:new-project [--auto]` | Full initialization: questions → research → requirements → roadmap |
-| `/gsd:discuss-phase [N] [--auto]` | Capture implementation decisions before planning |
+| `/gsd:discuss-phase [N] [--auto] [--analyze]` | Capture implementation decisions before planning (`--analyze` adds trade-off analysis) |
 | `/gsd:plan-phase [N] [--auto]` | Research + plan + verify for a phase |
 | `/gsd:execute-phase <N>` | Execute all plans in parallel waves, verify when complete |
 | `/gsd:verify-work [N]` | Manual user acceptance testing ¹ |
 | `/gsd:ship [N] [--draft]` | Create PR from verified phase work with auto-generated body |
 | `/gsd:next` | Automatically advance to the next logical workflow step |
+| `/gsd:fast <text>` | Inline trivial tasks — skips planning entirely, executes immediately |
 | `/gsd:audit-milestone` | Verify milestone achieved its definition of done |
 | `/gsd:complete-milestone` | Archive milestone, tag release |
 | `/gsd:new-milestone [name]` | Start next version: questions → research → requirements → roadmap |
@@ -546,6 +553,23 @@ You're never locked in. The system adapts.
 | `/gsd:pause-work` | Create handoff when stopping mid-phase (writes HANDOFF.json) |
 | `/gsd:resume-work` | Restore from last session |
 | `/gsd:session-report` | Generate session summary with work performed and outcomes |
+
+### Code Quality
+
+| Command | What it does |
+|---------|--------------|
+| `/gsd:review` | Cross-AI peer review of current phase or branch |
+| `/gsd:pr-branch` | Create clean PR branch filtering `.planning/` commits |
+| `/gsd:audit-uat` | Audit verification debt — find phases missing UAT |
+
+### Backlog & Threads
+
+| Command | What it does |
+|---------|--------------|
+| `/gsd:plant-seed <idea>` | Capture forward-looking ideas with trigger conditions — surfaces at the right milestone |
+| `/gsd:add-backlog <desc>` | Add idea to backlog parking lot (999.x numbering, outside active sequence) |
+| `/gsd:review-backlog` | Review and promote backlog items to active milestone or remove stale entries |
+| `/gsd:thread [name]` | Persistent context threads — lightweight cross-session knowledge for work spanning multiple sessions |
 
 ### Utilities
 
@@ -608,6 +632,7 @@ These spawn additional agents during planning/execution. They improve quality bu
 | `workflow.plan_check` | `true` | Verifies plans achieve phase goals before execution |
 | `workflow.verifier` | `true` | Confirms must-haves were delivered after execution |
 | `workflow.auto_advance` | `false` | Auto-chain discuss → plan → execute without stopping |
+| `workflow.research_before_questions` | `false` | Run research before discussion questions instead of after |
 
 Use `/gsd:settings` to toggle these, or override per-invocation:
 - `/gsd:plan-phase --skip-research`
@@ -641,6 +666,20 @@ At milestone completion, GSD offers squash merge (recommended) or merge with his
 ---
 
 ## Security
+
+### Built-in Security Hardening
+
+GSD includes defense-in-depth security since v1.27:
+
+- **Path traversal prevention** — All user-supplied file paths (`--text-file`, `--prd`) are validated to resolve within the project directory
+- **Prompt injection detection** — Centralized `security.cjs` module scans for injection patterns in user-supplied text before it enters planning artifacts
+- **PreToolUse prompt guard hook** — `gsd-prompt-guard` scans writes to `.planning/` for embedded injection vectors (advisory, not blocking)
+- **Safe JSON parsing** — Malformed `--fields` arguments are caught before they corrupt state
+- **Shell argument validation** — User text is sanitized before shell interpolation
+- **CI-ready injection scanner** — `prompt-injection-scan.test.cjs` scans all agent/workflow/command files for embedded injection vectors
+
+> [!NOTE]
+> Because GSD generates markdown files that become LLM system prompts, any user-controlled text flowing into planning artifacts is a potential indirect prompt injection vector. These protections are designed to catch such vectors at multiple layers.
 
 ### Protecting Sensitive Files
 
@@ -706,6 +745,7 @@ npx get-shit-done-cc --opencode --global --uninstall
 npx get-shit-done-cc --gemini --global --uninstall
 npx get-shit-done-cc --codex --global --uninstall
 npx get-shit-done-cc --copilot --global --uninstall
+npx get-shit-done-cc --cursor --global --uninstall
 npx get-shit-done-cc --antigravity --global --uninstall
 
 # Local installs (current project)
@@ -713,6 +753,7 @@ npx get-shit-done-cc --claude --local --uninstall
 npx get-shit-done-cc --opencode --local --uninstall
 npx get-shit-done-cc --codex --local --uninstall
 npx get-shit-done-cc --copilot --local --uninstall
+npx get-shit-done-cc --cursor --local --uninstall
 npx get-shit-done-cc --antigravity --local --uninstall
 ```
 

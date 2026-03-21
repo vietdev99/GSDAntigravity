@@ -20,6 +20,7 @@
  *   resolve-model <agent-type>         Get model for agent based on profile
  *   find-phase <phase>                 Find phase directory by number
  *   commit <message> [--files f1 f2] [--no-verify]   Commit planning docs
+ *   commit-to-subrepo <msg> --files f1 f2  Route commits to sub-repos
  *   verify-summary <path>              Verify a SUMMARY.md file
  *   generate-slug <text>               Convert text to URL-safe slug
  *   current-timestamp [format]         Get timestamp (full|date|filename)
@@ -134,7 +135,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { error } = require('./lib/core.cjs');
+const { error, findProjectRoot } = require('./lib/core.cjs');
 const state = require('./lib/state.cjs');
 const phase = require('./lib/phase.cjs');
 const roadmap = require('./lib/roadmap.cjs');
@@ -173,6 +174,13 @@ async function main() {
     error(`Invalid --cwd: ${cwd}`);
   }
 
+  // Resolve worktree root: in a linked worktree, .planning/ lives in the main worktree
+  const { resolveWorktreeRoot } = require('./lib/core.cjs');
+  const worktreeRoot = resolveWorktreeRoot(cwd);
+  if (worktreeRoot !== cwd) {
+    cwd = worktreeRoot;
+  }
+
   const rawIndex = args.indexOf('--raw');
   const raw = rawIndex !== -1;
   if (rawIndex !== -1) args.splice(rawIndex, 1);
@@ -180,7 +188,18 @@ async function main() {
   const command = args[0];
 
   if (!command) {
-    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, init');
+    error('Usage: gsd-tools <command> [args] [--raw] [--cwd <path>]\nCommands: state, resolve-model, find-phase, commit, verify-summary, verify, frontmatter, template, generate-slug, current-timestamp, list-todos, verify-path-exists, config-ensure-section, config-new-project, init');
+  }
+
+  // Multi-repo guard: resolve project root for commands that read/write .planning/.
+  // Skip for pure-utility commands that don't touch .planning/ to avoid unnecessary
+  // filesystem traversal on every invocation.
+  const SKIP_ROOT_RESOLUTION = new Set([
+    'generate-slug', 'current-timestamp', 'verify-path-exists',
+    'verify-summary', 'template', 'frontmatter',
+  ]);
+  if (!SKIP_ROOT_RESOLUTION.has(command)) {
+    cwd = findProjectRoot(cwd);
   }
 
   switch (command) {
@@ -306,6 +325,14 @@ async function main() {
       break;
     }
 
+    case 'commit-to-subrepo': {
+      const message = args[1];
+      const filesIndex = args.indexOf('--files');
+      const files = filesIndex !== -1 ? args.slice(filesIndex + 1).filter(a => !a.startsWith('--')) : [];
+      commands.cmdCommitToSubrepo(cwd, message, files, raw);
+      break;
+    }
+
     case 'verify-summary': {
       const summaryPath = args[1];
       const countIndex = args.indexOf('--check-count');
@@ -332,7 +359,12 @@ async function main() {
           name: nameIdx !== -1 ? args[nameIdx + 1] : null,
           type: typeIdx !== -1 ? args[typeIdx + 1] : 'execute',
           wave: waveIdx !== -1 ? args[waveIdx + 1] : '1',
-          fields: fieldsIdx !== -1 ? JSON.parse(args[fieldsIdx + 1]) : {},
+          fields: fieldsIdx !== -1 ? (() => {
+            const { safeJsonParse } = require('./lib/security.cjs');
+            const result = safeJsonParse(args[fieldsIdx + 1], { label: '--fields' });
+            if (!result.ok) error(result.error);
+            return result.value;
+          })() : {},
         }, raw);
       } else {
         error('Unknown template subcommand. Available: select, fill');
@@ -419,6 +451,11 @@ async function main() {
 
     case 'config-get': {
       config.cmdConfigGet(cwd, args[1], raw);
+      break;
+    }
+
+    case 'config-new-project': {
+      config.cmdConfigNewProject(cwd, args[1], raw);
       break;
     }
 
@@ -614,8 +651,17 @@ async function main() {
         case 'progress':
           init.cmdInitProgress(cwd, raw);
           break;
+        case 'new-workspace':
+          init.cmdInitNewWorkspace(cwd, raw);
+          break;
+        case 'list-workspaces':
+          init.cmdInitListWorkspaces(cwd, raw);
+          break;
+        case 'remove-workspace':
+          init.cmdInitRemoveWorkspace(cwd, args[2], raw);
+          break;
         default:
-          error(`Unknown init workflow: ${workflow}\nAvailable: execute-phase, plan-phase, new-project, new-milestone, quick, resume, verify-work, phase-op, todos, milestone-op, map-codebase, progress`);
+          error(`Unknown init workflow: ${workflow}\nAvailable: execute-phase, plan-phase, new-project, new-milestone, quick, resume, verify-work, phase-op, todos, milestone-op, map-codebase, progress, new-workspace, list-workspaces, remove-workspace`);
       }
       break;
     }

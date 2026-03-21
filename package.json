@@ -1,6 +1,6 @@
 {
   "name": "gsd-ide",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "description": "GSD (Get Shit Done) for Antigravity IDE & Kiro IDE — meta-prompting, context engineering and spec-driven development system.",
   "bin": {
     "gsd-ide": "bin/install.js"

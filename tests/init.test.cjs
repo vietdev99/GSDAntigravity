@@ -86,6 +86,19 @@ describe('init commands', () => {
     assert.strictEqual(output.uat_path, '.planning/phases/03-api/03-UAT.md');
   });
 
+  test('init plan-phase detects has_reviews and reviews_path when REVIEWS.md exists', () => {
+    const phaseDir = path.join(tmpDir, '.planning', 'phases', '03-api');
+    fs.mkdirSync(phaseDir, { recursive: true });
+    fs.writeFileSync(path.join(phaseDir, '03-REVIEWS.md'), '# Cross-AI Reviews');
+
+    const result = runGsdTools('init plan-phase 03', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.has_reviews, true);
+    assert.strictEqual(output.reviews_path, '.planning/phases/03-api/03-REVIEWS.md');
+  });
+
   test('init plan-phase omits optional paths if files missing', () => {
     const phaseDir = path.join(tmpDir, '.planning', 'phases', '03-api');
     fs.mkdirSync(phaseDir, { recursive: true });
@@ -96,6 +109,8 @@ describe('init commands', () => {
     const output = JSON.parse(result.output);
     assert.strictEqual(output.context_path, undefined);
     assert.strictEqual(output.research_path, undefined);
+    assert.strictEqual(output.reviews_path, undefined);
+    assert.strictEqual(output.has_reviews, false);
   });
 
   // ── phase_req_ids extraction (fix for #684) ──────────────────────────────
@@ -196,6 +211,89 @@ describe('init commands', () => {
 
     const output = JSON.parse(result.output);
     assert.strictEqual(output.phase_req_ids, null);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROADMAP fallback for init plan-phase / execute-phase / verify-work (#1238)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('init commands ROADMAP fallback when phase directory does not exist (#1238)', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempProject();
+    fs.writeFileSync(
+      path.join(tmpDir, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n### Phase 1: Foundation Setup\n**Goal:** Bootstrap project\n**Requirements**: R-01, R-02\n**Plans:** TBD\n'
+    );
+  });
+
+  afterEach(() => {
+    cleanup(tmpDir);
+  });
+
+  test('init plan-phase falls back to ROADMAP when no phase directory exists', () => {
+    const result = runGsdTools('init plan-phase 1', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, true, 'phase_found should be true from ROADMAP fallback');
+    assert.strictEqual(output.phase_dir, null, 'phase_dir should be null (no directory yet)');
+    assert.strictEqual(output.phase_number, '1');
+    assert.strictEqual(output.phase_name, 'Foundation Setup');
+    assert.strictEqual(output.phase_slug, 'foundation-setup');
+    assert.strictEqual(output.padded_phase, '01');
+  });
+
+  test('init execute-phase falls back to ROADMAP when no phase directory exists', () => {
+    const result = runGsdTools('init execute-phase 1', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, true, 'phase_found should be true from ROADMAP fallback');
+    assert.strictEqual(output.phase_dir, null, 'phase_dir should be null (no directory yet)');
+    assert.strictEqual(output.phase_number, '1');
+    assert.strictEqual(output.phase_name, 'Foundation Setup');
+    assert.strictEqual(output.phase_slug, 'foundation-setup');
+    assert.strictEqual(output.phase_req_ids, 'R-01, R-02');
+  });
+
+  test('init verify-work falls back to ROADMAP when no phase directory exists', () => {
+    const result = runGsdTools('init verify-work 1', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, true, 'phase_found should be true from ROADMAP fallback');
+    assert.strictEqual(output.phase_dir, null, 'phase_dir should be null (no directory yet)');
+    assert.strictEqual(output.phase_number, '1');
+    assert.strictEqual(output.phase_name, 'Foundation Setup');
+  });
+
+  test('init plan-phase returns phase_found false when neither directory nor ROADMAP entry exists', () => {
+    const result = runGsdTools('init plan-phase 99', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, false);
+    assert.strictEqual(output.phase_dir, null);
+    assert.strictEqual(output.phase_number, null);
+    assert.strictEqual(output.phase_name, null);
+  });
+
+  test('init plan-phase prefers disk directory over ROADMAP fallback', () => {
+    const phaseDir = path.join(tmpDir, '.planning', 'phases', '01-foundation-setup');
+    fs.mkdirSync(phaseDir, { recursive: true });
+    fs.writeFileSync(path.join(phaseDir, '01-01-PLAN.md'), '# Plan');
+
+    const result = runGsdTools('init plan-phase 1', tmpDir);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.phase_found, true);
+    assert.ok(output.phase_dir !== null, 'phase_dir should point to disk directory');
+    assert.ok(output.phase_dir.includes('01-foundation-setup'));
+    assert.strictEqual(output.plan_count, 1);
   });
 });
 
@@ -974,6 +1072,70 @@ describe('cmdInitNewMilestone', () => {
     assert.strictEqual(output.latest_completed_milestone_name, null);
     assert.strictEqual(output.phase_dir_count, 0);
     assert.strictEqual(output.phase_archive_path, null);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// findProjectRoot integration — gsd-tools resolves project root from sub-repo
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('findProjectRoot integration via --cwd', () => {
+  let projectRoot;
+
+  beforeEach(() => {
+    projectRoot = createTempProject();
+    // Add ROADMAP.md so init quick doesn't error
+    fs.writeFileSync(
+      path.join(projectRoot, '.planning', 'ROADMAP.md'),
+      '# Roadmap\n\n## Phase 1: Foundation\n**Goal:** Setup\n'
+    );
+    // Write sub_repos config
+    fs.writeFileSync(
+      path.join(projectRoot, '.planning', 'config.json'),
+      JSON.stringify({ sub_repos: ['backend', 'frontend'] })
+    );
+    // Create sub-repo directory
+    fs.mkdirSync(path.join(projectRoot, 'backend'));
+  });
+
+  afterEach(() => {
+    cleanup(projectRoot);
+  });
+
+  test('init quick from sub-repo CWD returns project_root pointing to parent', () => {
+    const backendDir = path.join(projectRoot, 'backend');
+    const result = runGsdTools(['init', 'quick', 'test task', '--cwd', backendDir]);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.ok('project_root' in output, 'Should have project_root');
+    assert.strictEqual(output.project_root, projectRoot, 'project_root should be the parent, not the sub-repo');
+    assert.ok(output.roadmap_exists, 'Should find ROADMAP.md at project root');
+  });
+
+  test('init quick from project root returns project_root as-is', () => {
+    const result = runGsdTools(['init', 'quick', 'test task', '--cwd', projectRoot]);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    assert.strictEqual(output.project_root, projectRoot);
+  });
+
+  test('state load from sub-repo CWD reads project root config', () => {
+    // Write STATE.md at project root
+    fs.writeFileSync(
+      path.join(projectRoot, '.planning', 'STATE.md'),
+      '---\ncurrent_phase: 1\nphase_name: Foundation\n---\n# State\n'
+    );
+
+    const backendDir = path.join(projectRoot, 'backend');
+    const result = runGsdTools(['state', '--cwd', backendDir]);
+    assert.ok(result.success, `Command failed: ${result.error}`);
+
+    const output = JSON.parse(result.output);
+    // Should find config from project root, not from backend/
+    assert.deepStrictEqual(output.config.sub_repos, ['backend', 'frontend'],
+      'Should read sub_repos from project root config');
   });
 });
 
